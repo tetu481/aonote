@@ -1,0 +1,15 @@
+.git
+.venv
+node_modules
+data
+.env
+.env.*
+!.env.example
+.agents
+.codex
+.ipynb_checkpoints
+.pytest_cache
+test
+docs/design
+playwright-report
+test-results
