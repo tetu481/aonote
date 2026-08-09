@@ -23,6 +23,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["backend"]
 
+[tool.setuptools.package-data]
+aonote = ["static/*", "static/assets/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 addopts = "-q"
