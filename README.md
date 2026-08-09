@@ -1,10 +1,10 @@
 # aonote
 
-aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWebワークスペースです。Python、React、SQLiteで動作し、検索はEmbeddingを使わずSQLite FTS5だけで行います。
+aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWebワークスペースです。Python、React、SQLiteで動作し、検索はSQLite FTS5で行います。
 
 ## 主な機能
 
-- JupyterLab風のフォルダ／ファイルツリー
+- 左側にフォルダ／ファイルツリー、右側にMarkdownの編集／プレビューを持つ画面構成
 - Markdownの編集、分割プレビュー、自動保存、更新競合の検出
 - SQLite FTS5（trigram）によるタイトル・ファイル名・本文の全文検索
 - 最近のノート、Wikiリンク、バックリンク、更新履歴
