@@ -166,6 +166,59 @@ test("ワークスペース機能をデスクトップで操作できる", async
   expect(browserIssues).toEqual([]);
 });
 
+test("ワークスペースを名前順で表示する", async ({ page, request }) => {
+  const browserIssues: string[] = [];
+  page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });
+  page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.message}`));
+  const suffix = Date.now().toString().slice(-7);
+  const rootNames = [`Sort-Z-${suffix}`, `Sort-b-${suffix}`, `Sort-A-${suffix}`];
+  const childNames = [`Child-Z-${suffix}`, `Child-b-${suffix}`, `Child-A-${suffix}`];
+  const noteNames = [`Note-Z-${suffix}.md`, `Note-b-${suffix}.md`, `Note-A-${suffix}.md`];
+
+  const roots: Array<{ id: string }> = [];
+  for (const name of rootNames) {
+    const response = await request.post("/api/folders", { data: { name } });
+    expect(response.ok()).toBeTruthy();
+    roots.push(await response.json());
+  }
+  const alphaRoot = roots[2];
+  for (const name of childNames) {
+    const response = await request.post("/api/folders", { data: { name, parent_id: alphaRoot.id } });
+    expect(response.ok()).toBeTruthy();
+  }
+  for (const filename of noteNames) {
+    const response = await request.post("/api/notes", { data: { filename, folder_id: alphaRoot.id } });
+    expect(response.ok()).toBeTruthy();
+  }
+  const unfiled = await request.post("/api/notes", { data: { filename: `Unfiled-${suffix}.md` } });
+  expect(unfiled.ok()).toBeTruthy();
+
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto("/");
+  await expect(page).toHaveTitle("aonote");
+  const rootLabels = page.locator(".tree-scroll > .folder-group > .tree-row.folder-row .folder-toggle > span");
+  await expect(rootLabels.first()).toHaveText("未整理");
+  const sortedRoots = (await rootLabels.allTextContents()).filter((name) => name.startsWith("Sort-") && name.endsWith(suffix));
+  expect(sortedRoots).toEqual([rootNames[2], rootNames[1], rootNames[0]]);
+
+  const alphaButton = page.getByRole("button", { name: rootNames[2], exact: true });
+  await alphaButton.click();
+  const alphaGroup = alphaButton.locator("../..");
+  const childLabels = alphaGroup.locator(":scope > .tree-children > .folder-group > .tree-row.folder-row .folder-toggle > span");
+  await expect(childLabels).toHaveCount(3);
+  expect(await childLabels.allTextContents()).toEqual([childNames[2], childNames[1], childNames[0]]);
+  const noteLabels = alphaGroup.locator(":scope > .tree-children > .note-row > span");
+  await expect(noteLabels).toHaveCount(3);
+  expect(await noteLabels.allTextContents()).toEqual([noteNames[2], noteNames[1], noteNames[0]]);
+  const directClasses = await alphaGroup.locator(":scope > .tree-children > *").evaluateAll(
+    (elements) => elements.map((element) => element.className),
+  );
+  expect(directClasses.slice(0, 3).every((value) => value.includes("folder-group"))).toBeTruthy();
+  expect(directClasses.slice(3).every((value) => value.includes("note-row"))).toBeTruthy();
+  await page.screenshot({ path: "/tmp/aonote-name-sort.png", fullPage: false });
+  expect(browserIssues).toEqual([]);
+});
+
 test("初期プレビューで表示名だけを表示し接続元はツールチップに出す", async ({ page }) => {
   const browserIssues: string[] = [];
   page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });

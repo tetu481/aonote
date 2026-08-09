@@ -13,6 +13,7 @@ from .security import now_ts, token_hash
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]")
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
+LEGACY_BRAND_RE = re.compile(r"aonote", re.IGNORECASE)
 _UNCHANGED = object()
 
 
@@ -263,6 +264,7 @@ class Database:
                 """
             )
             self._migrate_schema(connection)
+            self._migrate_seed_branding(connection)
             count = connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
             if count == 0:
                 self._seed(connection)
@@ -291,6 +293,42 @@ class Database:
                 name = definition.split()[0]
                 if name not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+
+    def _migrate_seed_branding(self, connection: sqlite3.Connection) -> None:
+        placeholders = ", ".join("?" for _ in SEED_NOTES)
+        rows = connection.execute(
+            f"""SELECT n.* FROM notes n
+                JOIN folders f ON f.id = n.folder_id
+                WHERE f.name = 'ようこそ' AND f.parent_id IS NULL
+                  AND n.filename IN ({placeholders})""",
+            tuple(SEED_NOTES),
+        ).fetchall()
+        changed = False
+        stamp = now_ts()
+        for row in rows:
+            canonical_content = SEED_NOTES[row["filename"]]
+            canonical_title = self.extract_title(canonical_content, row["filename"])
+            content = LEGACY_BRAND_RE.sub("aonote", row["content"])
+            title = LEGACY_BRAND_RE.sub("aonote", row["title"])
+            if content != canonical_content or title != canonical_title:
+                continue
+            if content == row["content"] and title == row["title"]:
+                continue
+            connection.execute(
+                """INSERT INTO note_revisions
+                   (note_id, title, content, version, created_at, actor_name, client_name)
+                   VALUES (?, ?, ?, ?, ?, '管理者', NULL)""",
+                (row["id"], row["title"], row["content"], row["version"], stamp),
+            )
+            connection.execute(
+                """UPDATE notes SET title = ?, content = ?, version = version + 1
+                   WHERE id = ?""",
+                (title, content, row["id"]),
+            )
+            self._reindex(connection, row["id"])
+            changed = True
+        if changed:
+            self._resolve_all_links(connection)
 
     def _seed(self, connection: sqlite3.Connection) -> None:
         stamp = now_ts()
@@ -329,6 +367,23 @@ class Database:
         client = client_name.strip() if client_name else ""
         return client if actor and client and actor != client else None
 
+    @staticmethod
+    def _name_sort_key(name: str, item_id: str) -> tuple[str, str, str]:
+        return name.casefold(), name, item_id
+
+    @classmethod
+    def _folders_by_parent(
+        cls, folders: Sequence[Dict[str, Any]]
+    ) -> Dict[Optional[str], List[Dict[str, Any]]]:
+        by_parent: Dict[Optional[str], List[Dict[str, Any]]] = {}
+        for folder in folders:
+            by_parent.setdefault(folder["parent_id"], []).append(folder)
+        for siblings in by_parent.values():
+            siblings.sort(
+                key=lambda folder: cls._name_sort_key(folder["name"], folder["id"])
+            )
+        return by_parent
+
     @classmethod
     def _note_dict(cls, row: sqlite3.Row) -> Dict[str, Any]:
         return {
@@ -357,20 +412,26 @@ class Database:
     def list_tree(self) -> List[Dict[str, Any]]:
         with self.connect() as connection:
             folders = [dict(row) for row in connection.execute(
-                "SELECT * FROM folders ORDER BY position, name COLLATE NOCASE"
+                "SELECT * FROM folders"
             )]
             notes = [self._note_dict(row) for row in connection.execute(
-                "SELECT * FROM notes ORDER BY filename COLLATE NOCASE"
+                "SELECT * FROM notes"
             )]
-        by_parent: Dict[Optional[str], List[Dict[str, Any]]] = {}
+        notes_by_folder: Dict[Optional[str], List[Dict[str, Any]]] = {}
+        for note in notes:
+            notes_by_folder.setdefault(note["folder_id"], []).append(note)
+        for siblings in notes_by_folder.values():
+            siblings.sort(
+                key=lambda note: self._name_sort_key(note["filename"], note["id"])
+            )
+        by_parent = self._folders_by_parent(folders)
         for folder in folders:
             folder["folders"] = []
-            folder["notes"] = [n for n in notes if n["folder_id"] == folder["id"]]
-            by_parent.setdefault(folder["parent_id"], []).append(folder)
+            folder["notes"] = notes_by_folder.get(folder["id"], [])
         for folder in folders:
             folder["folders"] = by_parent.get(folder["id"], [])
         roots = by_parent.get(None, [])
-        unfiled = [n for n in notes if n["folder_id"] is None]
+        unfiled = notes_by_folder.get(None, [])
         if unfiled:
             roots.insert(0, {
                 "id": "unfiled", "name": "未整理", "parent_id": None,
@@ -407,18 +468,25 @@ class Database:
 
     def list_folders(self) -> List[Dict[str, Any]]:
         with self.connect() as connection:
-            rows = connection.execute(
-                "SELECT id, name, parent_id FROM folders ORDER BY position, name COLLATE NOCASE"
-            ).fetchall()
-            return [
-                {
-                    "id": row["id"],
-                    "name": row["name"],
-                    "parent_id": row["parent_id"],
-                    "depth": len(self._folder_path(connection, row["id"])),
-                }
-                for row in rows
-            ]
+            folders = [dict(row) for row in connection.execute(
+                "SELECT id, name, parent_id FROM folders"
+            )]
+        by_parent = self._folders_by_parent(folders)
+        ordered: List[Dict[str, Any]] = []
+        visited = set()
+
+        def append_children(parent_id: Optional[str], depth: int) -> None:
+            for folder in by_parent.get(parent_id, []):
+                if folder["id"] in visited:
+                    raise ValueError("Folder hierarchy contains a cycle")
+                visited.add(folder["id"])
+                ordered.append({**folder, "depth": depth})
+                append_children(folder["id"], depth + 1)
+
+        append_children(None, 1)
+        if len(visited) != len(folders):
+            raise ValueError("Folder hierarchy contains an orphan or cycle")
+        return ordered
 
     @staticmethod
     def _folder_path(

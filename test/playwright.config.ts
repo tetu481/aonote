@@ -9,14 +9,14 @@ export default defineConfig({
   outputDir: "/tmp/aonote-playwright-results",
   use: {
     baseURL: "http://127.0.0.1:8765",
-    channel: "chrome",
+    channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL === "bundled" ? undefined : "chrome",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: {
     command: "../.venv/bin/uvicorn aonote.main:app --host 127.0.0.1 --port 8765",
     url: "http://127.0.0.1:8765/healthz",
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "true",
     timeout: 30_000,
     env: {
       ...process.env,

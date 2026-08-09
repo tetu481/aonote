@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from aonote.config import Settings
-from aonote.db import Database
+from aonote.db import SEED_NOTES, Database
 from aonote.main import create_app
 
 
@@ -344,6 +344,84 @@ async def test_nested_folders_relocation_and_depth_limit(tmp_path: Path):
 
 
 @pytest.mark.anyio
+async def test_workspace_name_order_matches_api_and_mcp(tmp_path: Path):
+    async with make_client(tmp_path, bypass=False) as client:
+        access_token = await oauth_token(client)
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        async def create_folder(name: str, parent_id: str | None = None) -> dict:
+            response = await client.post(
+                "/api/folders",
+                headers=headers,
+                json={"name": name, "parent_id": parent_id},
+            )
+            assert response.status_code == 201
+            return response.json()
+
+        zulu = await create_folder("Zulu")
+        beta = await create_folder("beta")
+        alpha = await create_folder("Alpha")
+        await create_folder("Zulu-child", alpha["id"])
+        await create_folder("beta-child", alpha["id"])
+        await create_folder("Alpha-child", alpha["id"])
+
+        for filename in ("Zulu.md", "beta.md", "Alpha.md"):
+            response = await client.post(
+                "/api/notes",
+                headers=headers,
+                json={"filename": filename, "folder_id": alpha["id"]},
+            )
+            assert response.status_code == 201
+        for filename in ("Zulu-unfiled.md", "Alpha-unfiled.md"):
+            response = await client.post(
+                "/api/notes", headers=headers, json={"filename": filename}
+            )
+            assert response.status_code == 201
+
+        tree = (await client.get("/api/tree", headers=headers)).json()
+        assert [folder["name"] for folder in tree] == [
+            "未整理", "Alpha", "beta", "Zulu", "ようこそ"
+        ]
+        assert [note["filename"] for note in tree[0]["notes"]] == [
+            "Alpha-unfiled.md", "Zulu-unfiled.md"
+        ]
+        alpha_node = next(folder for folder in tree if folder["id"] == alpha["id"])
+        assert [folder["name"] for folder in alpha_node["folders"]] == [
+            "Alpha-child", "beta-child", "Zulu-child"
+        ]
+        assert [note["filename"] for note in alpha_node["notes"]] == [
+            "Alpha.md", "beta.md", "Zulu.md"
+        ]
+
+        response = await client.post(
+            "/mcp",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": "sorted-folders",
+                "method": "tools/call",
+                "params": {"name": "list_folders", "arguments": {}},
+            },
+        )
+        assert response.status_code == 200
+        result = response.json()["result"]
+        assert result["isError"] is False
+        items = result["structuredContent"]["items"]
+        assert [(item["name"], item["depth"]) for item in items] == [
+            ("Alpha", 1),
+            ("Alpha-child", 2),
+            ("beta-child", 2),
+            ("Zulu-child", 2),
+            ("beta", 1),
+            ("Zulu", 1),
+            ("ようこそ", 1),
+        ]
+        assert {alpha["id"], beta["id"], zulu["id"]} <= {
+            item["id"] for item in items
+        }
+
+
+@pytest.mark.anyio
 async def test_mcp_actor_rename_and_move(tmp_path: Path):
     async with make_client(tmp_path, bypass=False) as client:
         access_token = await oauth_token(client, actor_name="ノート係")
@@ -437,3 +515,68 @@ def test_existing_database_is_migrated_without_losing_notes(tmp_path: Path):
     assert note["updated_by"] == "管理者"
     with database.connect() as connection:
         assert "actor_name" in {row["name"] for row in connection.execute("PRAGMA table_info(oauth_tokens)")}
+
+
+def test_only_seed_notes_receive_brand_case_migration(tmp_path: Path):
+    database = Database(tmp_path / "brand-migration.sqlite3")
+    database.initialize()
+    with database.connect() as connection:
+        welcome_folder = connection.execute(
+            "SELECT id FROM folders WHERE name = 'ようこそ' AND parent_id IS NULL"
+        ).fetchone()["id"]
+        seed = connection.execute(
+            "SELECT * FROM notes WHERE folder_id = ? AND filename = '01-ようこそ.md'",
+            (welcome_folder,),
+        ).fetchone()
+        legacy_content = SEED_NOTES["01-ようこそ.md"].replace("aonote", "Aonote")
+        connection.execute(
+            "UPDATE notes SET title = 'Aonoteへようこそ', content = ? WHERE id = ?",
+            (legacy_content, seed["id"]),
+        )
+        customized_seed = connection.execute(
+            "SELECT * FROM notes WHERE folder_id = ? AND filename = '02-MCP連携.md'",
+            (welcome_folder,),
+        ).fetchone()
+        connection.execute(
+            "UPDATE notes SET title = 'AONOTEの個人設定', content = '# AONOTEの個人設定' "
+            "WHERE id = ?",
+            (customized_seed["id"],),
+        )
+        original_version = seed["version"]
+        original_updated_at = seed["updated_at"]
+
+    personal = database.create_note(
+        "個人メモ.md", "# Aonoteを残す\n\nユーザー本文", welcome_folder
+    )
+    other_folder = database.create_folder("別フォルダ")
+    lookalike = database.create_note(
+        "01-ようこそ.md",
+        legacy_content,
+        other_folder["id"],
+    )
+
+    database.initialize()
+    migrated = database.get_note(seed["id"])
+    assert migrated is not None
+    assert migrated["title"] == "aonoteへようこそ"
+    assert migrated["content"] == SEED_NOTES["01-ようこそ.md"]
+    assert migrated["version"] == original_version + 1
+    assert migrated["updated_at"] == original_updated_at
+    assert database.get_note(customized_seed["id"])["content"] == "# AONOTEの個人設定"
+    assert database.get_note(personal["id"])["content"] == personal["content"]
+    assert database.get_note(lookalike["id"])["content"] == lookalike["content"]
+
+    database.initialize()
+    assert database.get_note(seed["id"])["version"] == original_version + 1
+    with database.connect() as connection:
+        revisions = connection.execute(
+            "SELECT title, content, version FROM note_revisions WHERE note_id = ?",
+            (seed["id"],),
+        ).fetchall()
+        assert [dict(revision) for revision in revisions] == [
+            {
+                "title": "Aonoteへようこそ",
+                "content": legacy_content,
+                "version": original_version,
+            }
+        ]
