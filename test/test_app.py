@@ -82,13 +82,35 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
     async with make_client(tmp_path) as client:
         tree = await client.get("/api/tree")
         assert tree.status_code == 200
-        inbox_id = next(folder["id"] for folder in tree.json() if folder["name"] == "Inbox")
+        folders = tree.json()
+        assert [folder["name"] for folder in folders] == ["ようこそ"]
+        assert [note["filename"] for note in folders[0]["notes"]] == [
+            "01-ようこそ.md",
+            "02-MCP連携.md",
+            "03-SQLite全文検索.md",
+            "04-Agent Skill.md",
+        ]
+        sqlite_note = next(note for note in folders[0]["notes"] if note["filename"] == "03-SQLite全文検索.md")
+        sqlite_note_response = await client.get(f"/api/notes/{sqlite_note['id']}")
+        assert sqlite_note_response.status_code == 200
+        assert "Embeddingモデルを使わず" not in sqlite_note_response.json()["content"]
+        skill_note = next(note for note in folders[0]["notes"] if note["filename"] == "04-Agent Skill.md")
+        skill_note_response = await client.get(f"/api/notes/{skill_note['id']}")
+        assert skill_note_response.status_code == 200
+        assert "name: aonote-workspace" in skill_note_response.json()["content"]
+        assert "`update_note`" in skill_note_response.json()["content"]
+        assert "`delete_note`" in skill_note_response.json()["content"]
+        mcp_note = next(note for note in folders[0]["notes"] if note["filename"] == "02-MCP連携.md")
+        mcp_note_response = await client.get(f"/api/notes/{mcp_note['id']}")
+        assert mcp_note_response.status_code == 200
+        assert any(link["filename"] == "01-ようこそ.md" for link in mcp_note_response.json()["backlinks"])
+        welcome_id = folders[0]["id"]
 
         created = await client.post(
             "/api/notes",
             json={
                 "filename": "検索テスト.md",
-                "folder_id": inbox_id,
+                "folder_id": welcome_id,
                 "content": "# 検索テスト\n\n青い鳥とSQLiteの全文検索について。",
             },
         )

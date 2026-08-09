@@ -33,7 +33,23 @@ test("ワークスペース機能をデスクトップで操作できる", async
   expect(favicon.body.match(/<path /g)).toHaveLength(2);
   await expect(page.getByLabel("aonote")).toContainText("aonote");
   await expect(page.getByLabel("ユーザー")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "ようこそ", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: "01-ようこそ.md", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "02-MCP連携.md", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "03-SQLite全文検索.md", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "04-Agent Skill.md", exact: true })).toBeVisible();
   await expect(page.getByLabel("Markdownプレビュー")).toBeVisible();
+  await expect(page.locator(".breadcrumb")).toContainText("01-ようこそ.md");
+  await expect(page.getByRole("button", { name: "01-ようこそ.md", exact: true })).toHaveClass(/selected/);
+  await page.screenshot({ path: "/tmp/aonote-initial-welcome.png", fullPage: false });
+  await page.getByRole("button", { name: "03-SQLite全文検索.md", exact: true }).click();
+  await expect(page.getByLabel("Markdownプレビュー")).toContainText("aonoteの検索はSQLite FTS5を利用します。");
+  await expect(page.getByLabel("Markdownプレビュー")).not.toContainText("Embeddingモデルを使わず");
+  await page.screenshot({ path: "/tmp/aonote-initial-data.png", fullPage: false });
+  await page.getByRole("button", { name: "04-Agent Skill.md", exact: true }).click();
+  await expect(page.getByLabel("Markdownプレビュー")).toContainText("aonote — Agent Skill");
+  await expect(page.getByLabel("Markdownプレビュー")).toContainText("name: aonote-workspace");
+  await page.screenshot({ path: "/tmp/aonote-agent-skill.png", fullPage: false });
   await expect(page.getByLabel("Markdownエディタ")).toHaveCount(0);
   await expect(page.getByText("作成者", { exact: true })).toBeVisible();
   await expect(page.getByText("管理者", { exact: true }).first()).toBeVisible();
@@ -65,6 +81,7 @@ test("ワークスペース機能をデスクトップで操作できる", async
 
   await page.getByRole("button", { name: "新規ノート" }).click();
   const noteDialog = page.locator(".new-note-dialog");
+  await expect(noteDialog.locator("select option:checked")).toHaveText("ようこそ");
   await noteDialog.getByLabel("ファイル名").fill(`${noteBase}.md`);
   await selectOptionContaining(page, ".new-note-dialog select", thirdName);
   await noteDialog.getByRole("button", { name: "作成", exact: true }).click();

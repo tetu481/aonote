@@ -13,7 +13,7 @@ type FolderProps = {
 };
 
 const FolderTree = memo(function FolderTree({ folder, selectedId, onSelect, onRename, onDelete, revealKey }: FolderProps) {
-  const [open, setOpen] = useState(folder.name === "Projects" || folder.name === "Inbox");
+  const [open, setOpen] = useState(folder.name === "ようこそ");
   const containsSelection = folderContainsNote(folder, selectedId);
   useEffect(() => {
     if (containsSelection) setOpen(true);

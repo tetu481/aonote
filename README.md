@@ -1,6 +1,8 @@
-# aonote
+# <img src="assets/aonote-title.svg" alt="aonote" height="42">
 
 aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWebワークスペースです。Python、React、SQLiteで動作し、検索はSQLite FTS5で行います。
+
+![aonoteのMarkdownワークスペース](top_image.png)
 
 ## 主な機能
 
@@ -16,7 +18,7 @@ aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWeb�
 
 ## ローカル開発
 
-Python 3.9以上とNode.js 18以上を利用してください。
+Python 3.12以上とNode.js 20.19以上、または22.12以上を利用してください。
 
 ```bash
 python -m venv .venv

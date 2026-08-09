@@ -9,7 +9,7 @@ export function NewNoteDialog({ open, folders, onClose, onCreate }: { open: bool
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const options = flattenFolders(folders);
-  useEffect(() => { if (open) { setName(""); setError(""); setFolder(options.find((item) => item.name === "Inbox")?.id ?? options[0]?.id ?? null); window.setTimeout(() => inputRef.current?.focus(), 20); } }, [open]);
+  useEffect(() => { if (open) { setName(""); setError(""); setFolder(options.find((item) => item.name === "ようこそ")?.id ?? options[0]?.id ?? null); window.setTimeout(() => inputRef.current?.focus(), 20); } }, [open]);
   if (!open) return null;
   return <div className="dialog-backdrop" onMouseDown={onClose}><form className="new-note-dialog" onMouseDown={(event) => event.stopPropagation()} onSubmit={async (event) => { event.preventDefault(); setBusy(true); setError(""); try { await onCreate(name, folder); onClose(); } catch (reason) { setError(reason instanceof Error ? reason.message : "ノートを作成できませんでした"); } finally { setBusy(false); } }}>
     <h2>新しいノート</h2><p>Markdownファイルをワークスペースに追加します。</p>

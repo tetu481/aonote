@@ -75,7 +75,7 @@ export default function App() {
       const [nextStatus, nextTree, nextRecent] = await Promise.all([api.status(), api.tree(), api.recent()]);
       setStatus(nextStatus); setTree(nextTree); setRecent(nextRecent); setAuthRequired(false);
       const notes = flattenNotes(nextTree);
-      const preferred = notes.find((item) => item.filename === "MCP連携.md") ?? notes[0];
+      const preferred = notes.find((item) => item.filename === "01-ようこそ.md") ?? notes[0];
       if (preferred) await selectById(preferred.id);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) setAuthRequired(true);

@@ -2,15 +2,15 @@
 
 aonoteは、以下を含む第三者のオープンソースソフトウェアとWebフォントを利用しています。各コンポーネントには、aonote本体とは別に、それぞれの著作権表示とライセンス条件が適用されます。
 
-この一覧は、`package-lock.json`、`pyproject.toml`、インストール済みパッケージに同梱されたライセンス情報を基に、2026年8月8日時点で確認したものです。
+この一覧は、`package-lock.json`、`pyproject.toml`、インストール済みパッケージに同梱されたライセンス情報を基に、2026年8月10日時点で確認したものです。
 
 ## 実行時の直接依存関係
 
 | コンポーネント | 確認バージョン | ライセンス | 提供元 |
 |---|---:|---|---|
-| FastAPI | 0.128.8 | MIT | <https://github.com/fastapi/fastapi> |
-| Uvicorn | 0.39.0 | BSD-3-Clause | <https://github.com/encode/uvicorn> |
-| python-multipart | 0.0.20 | Apache-2.0 | <https://github.com/Kludex/python-multipart> |
+| FastAPI | 0.141.1 | MIT | <https://github.com/fastapi/fastapi> |
+| Uvicorn | 0.52.1 | BSD-3-Clause | <https://github.com/encode/uvicorn> |
+| python-multipart | 0.0.32 | Apache-2.0 | <https://github.com/Kludex/python-multipart> |
 | React | 18.3.1 | MIT | <https://github.com/facebook/react> |
 | React DOM | 18.3.1 | MIT | <https://github.com/facebook/react> |
 | Lucide React | 0.468.0 | ISC | <https://github.com/lucide-icons/lucide> |
@@ -30,10 +30,11 @@ aonoteは、以下を含む第三者のオープンソースソフトウェア�
 
 | コンポーネント | 確認バージョン | ライセンス | 提供元 |
 |---|---:|---|---|
-| Vite | 4.5.14 | MIT | <https://github.com/vitejs/vite> |
+| Vite | 8.2.1 | MIT | <https://github.com/vitejs/vite> |
+| Vite React Plugin | 6.0.5 | MIT | <https://github.com/vitejs/vite-plugin-react> |
 | TypeScript | 5.9.3 | Apache-2.0 | <https://github.com/microsoft/TypeScript> |
-| Playwright Test | 1.48.2 | Apache-2.0 | <https://github.com/microsoft/playwright> |
-| pytest | 8.4.2 | MIT | <https://github.com/pytest-dev/pytest> |
+| Playwright Test | 1.62.1 | Apache-2.0 | <https://github.com/microsoft/playwright> |
+| pytest | 9.1.1 | MIT | <https://github.com/pytest-dev/pytest> |
 | HTTPX | 0.28.1 | BSD-3-Clause | <https://github.com/encode/httpx> |
 
 ## 主な推移的依存関係
