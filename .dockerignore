@@ -10,7 +10,6 @@ data
 .ipynb_checkpoints
 .pytest_cache
 test
-docs/design
 playwright-report
 test-results
 work
