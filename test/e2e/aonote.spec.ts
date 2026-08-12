@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const screenshotDir = process.env.AONOTE_E2E_SCREENSHOT_DIR ?? "/tmp";
+
 async function selectOptionContaining(page: Page, selector: string, text: string) {
   const option = page.locator(`${selector} option`).filter({ hasText: text }).first();
   const value = await option.getAttribute("value");
@@ -247,6 +249,28 @@ test("初期プレビューで表示名だけを表示し接続元はツール�
   await actor.focus();
   await expect(actor).toBeFocused();
   await page.screenshot({ path: "/tmp/aonote-author-tooltip.png", fullPage: false });
+  expect(browserIssues).toEqual([]);
+});
+
+test("ノート本文のWikiリンクから対象ノートを開ける", async ({ page }) => {
+  const browserIssues: string[] = [];
+  page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });
+  page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.message}`));
+
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.goto("/");
+  await expect(page).toHaveTitle("aonote");
+  await expect(page.locator(".breadcrumb")).toContainText("01-ようこそ.md");
+
+  const preview = page.getByLabel("Markdownプレビュー");
+  const mcpLink = preview.getByRole("link", { name: "MCP連携", exact: true });
+  await expect(mcpLink).toBeVisible();
+  await mcpLink.click();
+
+  await expect(page.locator(".breadcrumb")).toContainText("02-MCP連携.md");
+  await expect(page.getByRole("button", { name: "02-MCP連携.md", exact: true })).toHaveClass(/selected/);
+  await expect(preview).toContainText("MCP連携のセットアップ");
+  await page.screenshot({ path: `${screenshotDir}/aonote-wikilink-navigation.png`, fullPage: false });
   expect(browserIssues).toEqual([]);
 });
 

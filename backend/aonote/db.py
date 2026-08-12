@@ -540,6 +540,17 @@ class Database:
             note["path"] = "/".join(
                 [*[folder["name"] for folder in folder_path], row["filename"]]
             )
+            note["links"] = [
+                {
+                    "target": item["target_label"],
+                    "id": item["target_id"],
+                }
+                for item in connection.execute(
+                    """SELECT target_label, target_id FROM note_links
+                       WHERE source_id = ? ORDER BY target_label, alias""",
+                    (note_id,),
+                )
+            ]
             note["backlinks"] = [
                 {"id": item["id"], "title": item["title"], "filename": item["filename"]}
                 for item in connection.execute(

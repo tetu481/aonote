@@ -222,7 +222,7 @@ export default function App() {
             <div className="mobile-tabs"><button className={view !== "preview" ? "active" : ""} onClick={() => setView("edit")}>編集</button><button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>プレビュー</button></div>
             <div className={`document-workarea view-${view}`} id="preview">
               {view !== "preview" ? <EditorPane content={content} onChange={setContent} /> : null}
-              {view !== "edit" ? <PreviewPane content={content} /> : null}
+              {view !== "edit" ? <PreviewPane content={content} links={note.links} onWikilink={selectById} /> : null}
               {outlineOpen ? <button className="outline-scrim" aria-label="目次の外側を閉じる" onClick={() => setOutlineOpen(false)} /> : null}
               <Outline note={{ ...note, content }} drawerOpen={outlineOpen} onClose={() => setOutlineOpen(false)} onBacklink={(id) => void selectById(id)} />
             </div>

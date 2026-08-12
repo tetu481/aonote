@@ -113,6 +113,12 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert mcp_note_response.status_code == 200
         assert "Projects/test/note.md" in mcp_note_response.json()["content"]
         assert any(link["filename"] == "01-ようこそ.md" for link in mcp_note_response.json()["backlinks"])
+        welcome_note = next(note for note in folders[0]["notes"] if note["filename"] == "01-ようこそ.md")
+        welcome_note_response = await client.get(f"/api/notes/{welcome_note['id']}")
+        assert welcome_note_response.status_code == 200
+        assert welcome_note_response.json()["links"] == [
+            {"target": "02-MCP連携", "id": mcp_note["id"]}
+        ]
         welcome_id = folders[0]["id"]
 
         created = await client.post(

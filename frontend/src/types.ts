@@ -16,6 +16,7 @@ export type Note = NoteSummary & {
   content: string;
   folder_name: string | null;
   folder_path: Array<{ id: string; name: string }>;
+  links: Array<{ target: string; id: string | null }>;
   backlinks: Array<Pick<NoteSummary, "id" | "title" | "filename">>;
 };
 

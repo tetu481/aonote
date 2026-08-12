@@ -1,8 +1,9 @@
-import { Children, isValidElement, useDeferredValue, useMemo, type ComponentPropsWithoutRef, type ReactNode } from "react";
-import ReactMarkdown, { type ExtraProps } from "react-markdown";
+import { Children, isValidElement, useCallback, useDeferredValue, useMemo, type ComponentPropsWithoutRef, type MouseEvent, type ReactNode } from "react";
+import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CircleAlert, Info, Lightbulb, ShieldAlert, TriangleAlert } from "lucide-react";
 import { remarkAlerts } from "../remarkAlerts";
+import type { Note } from "../types";
 import { MermaidDiagram } from "./MermaidDiagram";
 
 type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
@@ -40,18 +41,46 @@ function normalizeWikilinks(markdown: string) {
   });
 }
 
-export function PreviewPane({ content }: { content: string }) {
+function MarkdownLink({ node: _node, href, children, ...props }: ComponentPropsWithoutRef<"a"> & ExtraProps) {
+  return <a href={href} className={href?.startsWith("#wikilink-") ? "wikilink" : undefined} {...props}>{children}</a>;
+}
+
+const markdownComponents = {
+  a: MarkdownLink,
+  blockquote: MarkdownBlockquote,
+  pre: MarkdownPre,
+} satisfies Components;
+
+type Props = {
+  content: string;
+  links: Note["links"];
+  onWikilink: (id: string) => void;
+};
+
+export function PreviewPane({ content, links, onWikilink }: Props) {
   const deferred = useDeferredValue(content);
   const markdown = useMemo(() => normalizeWikilinks(deferred), [deferred]);
+  const linkTargets = useMemo(
+    () => new Map(links.flatMap((link) => link.id ? [[link.target, link.id] as const] : [])),
+    [links],
+  );
+  const followWikilink = useCallback((event: MouseEvent<HTMLElement>) => {
+    const element = event.target;
+    if (!(element instanceof Element)) return;
+    const anchor = element.closest<HTMLAnchorElement>("a.wikilink");
+    if (!anchor || !event.currentTarget.contains(anchor)) return;
+    const href = anchor.getAttribute("href") ?? "";
+    if (!href.startsWith("#wikilink-")) return;
+    event.preventDefault();
+    const target = decodeURIComponent(href.slice("#wikilink-".length));
+    const noteId = linkTargets.get(target);
+    if (noteId) onWikilink(noteId);
+  }, [linkTargets, onWikilink]);
   return (
-    <article className="preview-pane markdown-body" aria-label="Markdownプレビュー">
+    <article className="preview-pane markdown-body" aria-label="Markdownプレビュー" onClick={followWikilink}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkAlerts]}
-        components={{
-          a: ({ href, children }) => <a href={href} className={href?.startsWith("#wikilink-") ? "wikilink" : undefined}>{children}</a>,
-          blockquote: MarkdownBlockquote,
-          pre: MarkdownPre,
-        }}
+        components={markdownComponents}
       >{markdown}</ReactMarkdown>
     </article>
   );
