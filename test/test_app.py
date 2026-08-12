@@ -9,8 +9,8 @@ import pytest
 
 from aonote.config import Settings
 from aonote.db import (
-    LEGACY_AGENT_SKILL_NOTE,
-    LEGACY_MCP_NOTE,
+    PRE_FOLDER_AGENT_SKILL_NOTE,
+    PRE_FOLDER_MCP_NOTE,
     SEED_NOTES,
     Database,
 )
@@ -104,11 +104,14 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert skill_note_response.status_code == 200
         assert "name: aonote-workspace" in skill_note_response.json()["content"]
         assert "`get_note` accepts exactly one of `note_id` or `path`" in skill_note_response.json()["content"]
+        assert "`create_folder`" in skill_note_response.json()["content"]
+        assert "Missing parent folders are created automatically" in skill_note_response.json()["content"]
         assert "`update_note`" in skill_note_response.json()["content"]
         assert "`delete_note`" in skill_note_response.json()["content"]
         mcp_note = next(note for note in folders[0]["notes"] if note["filename"] == "02-MCP連携.md")
         mcp_note_response = await client.get(f"/api/notes/{mcp_note['id']}")
         assert mcp_note_response.status_code == 200
+        assert "Projects/test/note.md" in mcp_note_response.json()["content"]
         assert any(link["filename"] == "01-ようこそ.md" for link in mcp_note_response.json()["backlinks"])
         welcome_id = folders[0]["id"]
 
@@ -179,6 +182,8 @@ async def test_oauth_discovery_pkce_and_mcp_tools(tmp_path: Path):
         )
         assert initialized.status_code == 200
         assert initialized.json()["result"]["serverInfo"]["name"] == "aonote"
+        assert "create_folder" in initialized.json()["result"]["instructions"]
+        assert "workspace path" in initialized.json()["result"]["instructions"]
 
         tool_response = await client.post(
             "/mcp",
@@ -188,12 +193,24 @@ async def test_oauth_discovery_pkce_and_mcp_tools(tmp_path: Path):
         tools = tool_response.json()["result"]["tools"]
         assert {tool["name"] for tool in tools} >= {
             "search_notes", "get_note", "list_folders", "create_note", "update_note",
-            "rename_note", "move_note",
+            "create_folder", "rename_note", "move_note",
         }
         get_note_tool = next(tool for tool in tools if tool["name"] == "get_note")
         assert set(get_note_tool["inputSchema"]["properties"]) == {"note_id", "path"}
         assert get_note_tool["inputSchema"]["oneOf"] == [
             {"required": ["note_id"]},
+            {"required": ["path"]},
+        ]
+        create_folder_tool = next(
+            tool for tool in tools if tool["name"] == "create_folder"
+        )
+        assert create_folder_tool["inputSchema"]["required"] == ["name"]
+        create_note_tool = next(tool for tool in tools if tool["name"] == "create_note")
+        assert set(create_note_tool["inputSchema"]["properties"]) == {
+            "filename", "path", "content", "folder_id"
+        }
+        assert create_note_tool["inputSchema"]["oneOf"] == [
+            {"required": ["filename"]},
             {"required": ["path"]},
         ]
 
@@ -330,21 +347,191 @@ async def test_mcp_write_scope_is_enforced(tmp_path: Path):
             "notes:read notes:search",
             requested_scope="notes:read notes:search notes:write",
         )
-        response = await client.post(
-            "/mcp",
-            headers={"Authorization": f"Bearer {access_token}"},
-            json={
-                "jsonrpc": "2.0",
-                "id": 4,
-                "method": "tools/call",
-                "params": {
-                    "name": "create_note",
-                    "arguments": {"filename": "拒否.md", "content": "# 拒否"},
+        headers = {"Authorization": f"Bearer {access_token}"}
+        denied_calls = (
+            ("create_folder", {"name": "拒否フォルダ"}),
+            ("create_note", {"filename": "拒否.md", "content": "# 拒否"}),
+            ("create_note", {"path": "拒否/パス.md", "content": "# 拒否"}),
+        )
+        for request_id, (tool_name, arguments) in enumerate(denied_calls, start=4):
+            response = await client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "tools/call",
+                    "params": {"name": tool_name, "arguments": arguments},
                 },
+            )
+            assert response.status_code == 200
+            result = response.json()["result"]
+            assert result["isError"] is True
+            assert "notes:write" in result["content"][0]["text"]
+        tree = (await client.get("/api/tree", headers=headers)).json()
+        assert [folder["name"] for folder in tree] == ["ようこそ"]
+
+
+@pytest.mark.anyio
+async def test_mcp_folder_and_path_note_creation(tmp_path: Path):
+    async with make_client(tmp_path, bypass=False) as client:
+        access_token = await oauth_token(client, actor_name="構成担当")
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        async def call_tool(name: str, arguments: dict, error: bool = False):
+            response = await client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": f"{name}-{len(arguments)}",
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+            )
+            assert response.status_code == 200
+            result = response.json()["result"]
+            assert result["isError"] is error, result
+            return result if error else result["structuredContent"]
+
+        root = await call_tool("create_folder", {"name": "MCPルート"})
+        child = await call_tool(
+            "create_folder", {"name": "子", "parent_id": root["id"]}
+        )
+        third = await call_tool(
+            "create_folder", {"name": "孫", "parent_id": child["id"]}
+        )
+        assert (root["depth"], child["depth"], third["depth"]) == (1, 2, 3)
+
+        depth_error = await call_tool(
+            "create_folder",
+            {"name": "第四階層", "parent_id": third["id"]},
+            error=True,
+        )
+        assert "cannot exceed 3" in depth_error["content"][0]["text"]
+        duplicate_folder = await call_tool(
+            "create_folder", {"name": "MCPルート"}, error=True
+        )
+        assert "already exists" in duplicate_folder["content"][0]["text"]
+        missing_parent = await call_tool(
+            "create_folder",
+            {"name": "孤立", "parent_id": "missing-folder"},
+            error=True,
+        )
+        assert "Folder not found" in missing_parent["content"][0]["text"]
+
+        created = await call_tool(
+            "create_note",
+            {
+                "path": "MCPルート/自動/パス作成.md",
+                "content": "# パス作成\n\n自動作成されたノート",
             },
         )
-        assert response.status_code == 200
-        assert response.json()["result"]["isError"] is True
+        assert created["path"] == "MCPルート/自動/パス作成.md"
+        assert [folder["name"] for folder in created["folder_path"]] == [
+            "MCPルート", "自動"
+        ]
+        assert created["created_by"] == "構成担当"
+        assert created["created_via"] == "Test ChatGPT"
+
+        reused = await call_tool(
+            "create_note",
+            {
+                "path": "MCPルート/自動/再利用.md",
+                "content": "# 再利用",
+            },
+        )
+        assert reused["folder_id"] == created["folder_id"]
+
+        maximum = await call_tool(
+            "create_note",
+            {
+                "path": "新規一/新規二/新規三/最大階層.md",
+                "content": "# 最大階層",
+            },
+        )
+        assert len(maximum["folder_path"]) == 3
+
+        legacy = await call_tool(
+            "create_note",
+            {
+                "filename": "従来指定.md",
+                "folder_id": root["id"],
+                "content": "# 従来指定",
+            },
+        )
+        assert legacy["path"] == "MCPルート/従来指定.md"
+
+        unfiled = await call_tool(
+            "create_note",
+            {
+                "filename": "未整理重複.md",
+                "content": "# 未整理",
+            },
+        )
+        assert unfiled["path"] == "未整理重複.md"
+        duplicate_unfiled = await call_tool(
+            "create_note",
+            {
+                "filename": "未整理重複.md",
+                "content": "# 未整理の重複",
+            },
+            error=True,
+        )
+        assert "already exists" in duplicate_unfiled["content"][0]["text"]
+
+        duplicate_note = await call_tool(
+            "create_note",
+            {
+                "path": created["path"],
+                "content": "# 重複",
+            },
+            error=True,
+        )
+        assert "already exists" in duplicate_note["content"][0]["text"]
+
+        too_deep = await call_tool(
+            "create_note",
+            {
+                "path": "ロールバック/一/二/三/超過.md",
+                "content": "# 超過",
+            },
+            error=True,
+        )
+        assert "cannot exceed 3" in too_deep["content"][0]["text"]
+
+        invalid_paths = (
+            "",
+            "/先頭.md",
+            "二重//区切り.md",
+            "相対/../不正.md",
+            "逆\\区切り.md",
+            "拡張子なし/不正.txt",
+        )
+        for note_path in invalid_paths:
+            invalid = await call_tool(
+                "create_note",
+                {"path": note_path, "content": "# 不正"},
+                error=True,
+            )
+            assert "error" in invalid["content"][0]["text"]
+
+        mixed_destination = await call_tool(
+            "create_note",
+            {
+                "path": "混在/不正.md",
+                "folder_id": root["id"],
+                "content": "# 不正",
+            },
+            error=True,
+        )
+        assert "folder_id cannot be used" in mixed_destination["content"][0]["text"]
+
+        folders = await call_tool("list_folders", {})
+        items = folders["items"]
+        assert sum(item["name"] == "MCPルート" for item in items) == 1
+        assert sum(item["name"] == "自動" for item in items) == 1
+        assert not any(item["name"] in {"第四階層", "孤立", "ロールバック"} for item in items)
 
 
 @pytest.mark.anyio
@@ -437,8 +624,15 @@ def test_get_note_by_workspace_path(tmp_path: Path):
         with pytest.raises(ValueError):
             database.get_note_by_path(invalid_path)
 
-    duplicate_a = database.create_folder("Duplicate")
-    duplicate_b = database.create_folder("Duplicate")
+    with database.connect() as connection:
+        connection.execute(
+            "INSERT INTO folders VALUES ('duplicate-a', 'Duplicate', NULL, 1, 1, 1)"
+        )
+        connection.execute(
+            "INSERT INTO folders VALUES ('duplicate-b', 'Duplicate', NULL, 2, 1, 1)"
+        )
+    duplicate_a = {"id": "duplicate-a"}
+    duplicate_b = {"id": "duplicate-b"}
     database.create_note("same.md", "# first", duplicate_a["id"])
     database.create_note("same.md", "# second", duplicate_b["id"])
     with pytest.raises(ValueError, match="ambiguous"):
@@ -645,11 +839,11 @@ def test_only_seed_notes_receive_brand_case_migration(tmp_path: Path):
         ).fetchone()
         connection.execute(
             "UPDATE notes SET content = ? WHERE id = ?",
-            (LEGACY_MCP_NOTE, legacy_mcp["id"]),
+            (PRE_FOLDER_MCP_NOTE, legacy_mcp["id"]),
         )
         connection.execute(
             "UPDATE notes SET content = ? WHERE id = ?",
-            (LEGACY_AGENT_SKILL_NOTE, legacy_skill["id"]),
+            (PRE_FOLDER_AGENT_SKILL_NOTE, legacy_skill["id"]),
         )
         customized_seed = connection.execute(
             "SELECT * FROM notes WHERE folder_id = ? AND filename = '03-SQLite全文検索.md'",

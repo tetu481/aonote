@@ -12,7 +12,7 @@ aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWeb�
 - 最近のノート、Wikiリンク、バックリンク、更新履歴
 - MCP Streamable HTTP互換のJSON-RPCエンドポイント
 - OAuth 2.1の認可コード＋PKCE（S256）、DCR、Protected Resource Metadata
-- MCPツール：一覧、ID／パス指定取得、検索、作成、更新、削除
+- MCPツール：一覧、ID／パス指定取得、検索、フォルダ／ノート作成、更新、削除
 - ノートの作成者・修正者と作成日時・変更日時の表示
 - ノートの名前変更・移動、最大階層を設定できるフォルダ作成
 
@@ -68,8 +68,9 @@ ChatGPT接続には公開HTTPSが必要です。ローカル開発ではMCP Insp
 | `list_notes` | `notes:read` | 最近のノートを一覧 |
 | `get_note` | `notes:read` | IDまたはワークスペース相対パスでMarkdown本文とバージョンを取得 |
 | `list_folders` | `notes:read` | 移動先フォルダのIDと階層を一覧 |
+| `create_folder` | `notes:write` | ルートまたは指定フォルダの配下へフォルダを作成 |
 | `search_notes` | `notes:search` | SQLite FTS5で全文検索 |
-| `create_note` | `notes:write` | ノートを作成 |
+| `create_note` | `notes:write` | ファイル名／フォルダID、または自動フォルダ作成を伴うパス指定でノートを作成 |
 | `update_note` | `notes:write` | バージョン付きで安全に更新 |
 | `rename_note` | `notes:write` | ノートのファイル名を変更 |
 | `move_note` | `notes:write` | ノートを別のフォルダへ移動 |
@@ -82,6 +83,18 @@ ChatGPT接続には公開HTTPSが必要です。ローカル開発ではMCP Insp
 ```
 
 未整理のノートは`{"path": "memo.md"}`のようにファイル名だけを指定します。パスは名前変更や移動によって変わりますが、`note_id`は変わりません。
+
+`create_folder`では`name`と任意の`parent_id`を指定します。`parent_id`を省略または`null`にするとルートへ作成されます。
+
+```json
+{"name": "Projects", "parent_id": null}
+```
+
+`create_note`は従来の`filename`と`folder_id`に加えて、`path`も指定できます。パス内に存在しないフォルダは`AONOTE_MAX_FOLDER_DEPTH`の範囲内で自動作成され、既存フォルダは再利用されます。
+
+```json
+{"path": "Projects/test/note.md", "content": "# note"}
+```
 
 ## セキュリティ上の注意
 

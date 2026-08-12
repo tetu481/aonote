@@ -32,6 +32,14 @@ AGENT_SKILL_PATH_GUIDANCE = """## Note lookup
 - Prefer a path copied from the aonote browser when the user provides one.
 
 """
+AGENT_SKILL_CREATION_GUIDANCE = """## Creating folders and notes
+
+- Use `create_folder` with `name` and an optional `parent_id`; omit `parent_id` for a root folder.
+- `create_note` accepts either `filename` with an optional `folder_id`, or a workspace-relative `path`.
+- Prefer `path` when the destination hierarchy is known. Missing parent folders are created automatically up to the configured depth limit.
+- Do not pass `filename` or `folder_id` together with `path`.
+
+"""
 MCP_PATH_GUIDANCE = """## パスでノートを取得
 
 `get_note`にはノートIDだけでなく、ブラウザのコピーボタンで取得したワークスペース相対パスも指定できます。
@@ -41,6 +49,21 @@ MCP_PATH_GUIDANCE = """## パスでノートを取得
 ```
 
 未整理のノートは`memo.md`のようにファイル名だけを指定します。`note_id`と`path`はどちらか一方だけを渡してください。
+
+"""
+MCP_CREATION_GUIDANCE = """## フォルダとパス指定ノートを作成
+
+`create_folder`は`name`と任意の`parent_id`を受け取り、ルートまたは既存フォルダの配下へフォルダを作成します。
+
+```json
+{"name": "Projects", "parent_id": null}
+```
+
+`create_note`へ`path`を指定すると、存在しない親フォルダを設定された最大階層まで自動作成します。従来の`filename`と`folder_id`による作成も利用できます。
+
+```json
+{"path": "Projects/test/note.md", "content": "# note"}
+```
 
 """
 
@@ -75,7 +98,7 @@ aonoteはOAuth 2.1による認可コードフローとPKCE（S256）を採用し
 - スコープは最小権限の原則に基づきます
 - MCPへの各リクエストでトークンを検証します
 
-{MCP_PATH_GUIDANCE}## ChatGPTに接続
+{MCP_PATH_GUIDANCE}{MCP_CREATION_GUIDANCE}## ChatGPTに接続
 
 ChatGPTのプラグイン設定で、公開HTTPSエンドポイントを指定します。
 
@@ -132,7 +155,7 @@ Use aonote MCP as the operational layer for this Markdown workspace. Prefer aono
 
 Respect the granted scopes. If a required scope is unavailable, explain the limitation instead of retrying the operation.
 
-{AGENT_SKILL_PATH_GUIDANCE}## Discovery
+{AGENT_SKILL_PATH_GUIDANCE}{AGENT_SKILL_CREATION_GUIDANCE}## Discovery
 
 - Use `search_notes` for keyword searches across titles, filenames, and Markdown bodies.
 - Use `list_notes` to browse recently updated notes.
@@ -165,6 +188,7 @@ For organization:
 - `get_note`
 - `list_folders`
 - `search_notes`
+- `create_folder`
 - `create_note`
 - `update_note`
 - `rename_note`
@@ -174,8 +198,13 @@ For organization:
 """,
 }
 
-LEGACY_AGENT_SKILL_NOTE = (
+PRE_FOLDER_AGENT_SKILL_NOTE = (
     SEED_NOTES["04-Agent Skill.md"]
+    .replace(AGENT_SKILL_CREATION_GUIDANCE, "")
+    .replace("- `create_folder`\n", "")
+)
+LEGACY_AGENT_SKILL_NOTE = (
+    PRE_FOLDER_AGENT_SKILL_NOTE
     .replace(
         AGENT_SKILL_CORE_LOOKUP,
         "1. Search or list notes before creating or editing them.\n",
@@ -186,10 +215,16 @@ LEGACY_AGENT_SKILL_NOTE = (
         "- Use `get_note` only after identifying the required note ID.\n",
     )
 )
-LEGACY_MCP_NOTE = SEED_NOTES["02-MCP連携.md"].replace(MCP_PATH_GUIDANCE, "")
+PRE_FOLDER_MCP_NOTE = SEED_NOTES["02-MCP連携.md"].replace(
+    MCP_CREATION_GUIDANCE, ""
+)
+LEGACY_MCP_NOTE = PRE_FOLDER_MCP_NOTE.replace(MCP_PATH_GUIDANCE, "")
 LEGACY_SEED_NOTES = {
-    "02-MCP連携.md": (LEGACY_MCP_NOTE,),
-    "04-Agent Skill.md": (LEGACY_AGENT_SKILL_NOTE,),
+    "02-MCP連携.md": (PRE_FOLDER_MCP_NOTE, LEGACY_MCP_NOTE),
+    "04-Agent Skill.md": (
+        PRE_FOLDER_AGENT_SKILL_NOTE,
+        LEGACY_AGENT_SKILL_NOTE,
+    ),
 }
 
 
@@ -616,30 +651,61 @@ class Database:
         path.reverse()
         return path
 
-    def create_folder(
-        self, name: str, parent_id: Optional[str] = None, max_depth: int = 3
-    ) -> Dict[str, Any]:
+    @staticmethod
+    def _clean_folder_name(name: str) -> str:
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("Folder name is required")
+        if len(clean_name) > 120:
+            raise ValueError("Folder name must be 120 characters or fewer")
         if "/" in clean_name or "\\" in clean_name:
             raise ValueError("Folder name cannot contain path separators")
+        if clean_name in {".", ".."}:
+            raise ValueError("Invalid folder name")
+        return clean_name
+
+    @staticmethod
+    def _clean_note_filename(filename: str) -> str:
+        clean_name = filename.strip()
+        if not clean_name:
+            raise ValueError("Filename is required")
+        if "/" in clean_name or "\\" in clean_name:
+            raise ValueError("Filename cannot contain path separators")
+        if not clean_name.lower().endswith(".md"):
+            clean_name += ".md"
+        if len(clean_name) > 180:
+            raise ValueError("Filename must be 180 characters or fewer")
+        return clean_name
+
+    def _create_folder(
+        self,
+        connection: sqlite3.Connection,
+        name: str,
+        parent_id: Optional[str],
+        max_depth: int,
+    ) -> Dict[str, Any]:
+        clean_name = self._clean_folder_name(name)
         if parent_id == "unfiled":
             parent_id = None
+        depth = len(self._folder_path(connection, parent_id)) + 1
+        if depth > max_depth:
+            raise FolderDepthError(max_depth)
+        duplicate = connection.execute(
+            "SELECT id FROM folders WHERE parent_id IS ? AND name = ?",
+            (parent_id, clean_name),
+        ).fetchone()
+        if duplicate:
+            raise ValueError("Folder already exists")
         folder_id = str(uuid4())
         stamp = now_ts()
-        with self.connect() as connection:
-            depth = len(self._folder_path(connection, parent_id)) + 1
-            if depth > max_depth:
-                raise FolderDepthError(max_depth)
-            position = connection.execute(
-                "SELECT COALESCE(MAX(position), -1) + 1 FROM folders WHERE parent_id IS ?",
-                (parent_id,),
-            ).fetchone()[0]
-            connection.execute(
-                "INSERT INTO folders VALUES (?, ?, ?, ?, ?, ?)",
-                (folder_id, clean_name, parent_id, position, stamp, stamp),
-            )
+        position = connection.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM folders WHERE parent_id IS ?",
+            (parent_id,),
+        ).fetchone()[0]
+        connection.execute(
+            "INSERT INTO folders VALUES (?, ?, ?, ?, ?, ?)",
+            (folder_id, clean_name, parent_id, position, stamp, stamp),
+        )
         return {
             "id": folder_id,
             "name": clean_name,
@@ -647,12 +713,14 @@ class Database:
             "depth": depth,
         }
 
+    def create_folder(
+        self, name: str, parent_id: Optional[str] = None, max_depth: int = 3
+    ) -> Dict[str, Any]:
+        with self.connect() as connection:
+            return self._create_folder(connection, name, parent_id, max_depth)
+
     def rename_folder(self, folder_id: str, name: str) -> Optional[Dict[str, Any]]:
-        clean_name = name.strip()
-        if not clean_name:
-            raise ValueError("Folder name is required")
-        if "/" in clean_name or "\\" in clean_name:
-            raise ValueError("Folder name cannot contain path separators")
+        clean_name = self._clean_folder_name(name)
         if folder_id == "unfiled":
             return None
         with self.connect() as connection:
@@ -661,6 +729,13 @@ class Database:
             ).fetchone()
             if not folder:
                 return None
+            duplicate = connection.execute(
+                """SELECT id FROM folders
+                   WHERE parent_id IS ? AND name = ? AND id <> ?""",
+                (folder["parent_id"], clean_name, folder_id),
+            ).fetchone()
+            if duplicate:
+                raise ValueError("Folder already exists")
             connection.execute(
                 "UPDATE folders SET name = ?, updated_at = ? WHERE id = ?",
                 (clean_name, now_ts(), folder_id),
@@ -699,6 +774,43 @@ class Database:
             connection.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
             return True
 
+    def _create_note(
+        self,
+        connection: sqlite3.Connection,
+        filename: str,
+        content: str,
+        folder_id: Optional[str],
+        actor_name: str,
+        client_name: Optional[str],
+    ) -> str:
+        clean_name = self._clean_note_filename(filename)
+        if folder_id == "unfiled":
+            folder_id = None
+        if folder_id:
+            self._folder_path(connection, folder_id)
+        duplicate = connection.execute(
+            "SELECT id FROM notes WHERE folder_id IS ? AND filename = ?",
+            (folder_id, clean_name),
+        ).fetchone()
+        if duplicate:
+            raise sqlite3.IntegrityError("Note already exists")
+        note_id = str(uuid4())
+        stamp = now_ts()
+        title = self.extract_title(content, clean_name)
+        connection.execute(
+            """INSERT INTO notes
+               (id, folder_id, filename, title, content, version, created_at, updated_at,
+                created_actor_name, created_client_name, updated_actor_name, updated_client_name)
+               VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)""",
+            (
+                note_id, folder_id, clean_name, title, content, stamp, stamp,
+                actor_name, client_name, actor_name, client_name,
+            ),
+        )
+        self._reindex(connection, note_id)
+        self._resolve_all_links(connection)
+        return note_id
+
     def create_note(
         self,
         filename: str,
@@ -707,29 +819,58 @@ class Database:
         actor_name: str = "管理者",
         client_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        clean_name = filename.strip()
-        if not clean_name.lower().endswith(".md"):
-            clean_name += ".md"
-        note_id = str(uuid4())
-        stamp = now_ts()
-        title = self.extract_title(content, clean_name)
         with self.connect() as connection:
-            if folder_id == "unfiled":
-                folder_id = None
-            if folder_id:
-                self._folder_path(connection, folder_id)
-            connection.execute(
-                """INSERT INTO notes
-                   (id, folder_id, filename, title, content, version, created_at, updated_at,
-                    created_actor_name, created_client_name, updated_actor_name, updated_client_name)
-                   VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)""",
-                (
-                    note_id, folder_id, clean_name, title, content, stamp, stamp,
-                    actor_name, client_name, actor_name, client_name,
-                ),
+            note_id = self._create_note(
+                connection,
+                filename,
+                content,
+                folder_id,
+                actor_name,
+                client_name,
             )
-            self._reindex(connection, note_id)
-            self._resolve_all_links(connection)
+        return self.get_note(note_id)  # type: ignore[return-value]
+
+    def create_note_by_path(
+        self,
+        note_path: str,
+        content: str = "",
+        max_depth: int = 3,
+        actor_name: str = "管理者",
+        client_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        parts = self._note_path_parts(note_path)
+        folder_names, filename = parts[:-1], parts[-1]
+        if len(folder_names) > max_depth:
+            raise FolderDepthError(max_depth)
+        with self.connect() as connection:
+            parent_id: Optional[str] = None
+            traversed: List[str] = []
+            for folder_name in folder_names:
+                clean_name = self._clean_folder_name(folder_name)
+                traversed.append(clean_name)
+                matches = connection.execute(
+                    "SELECT id FROM folders WHERE parent_id IS ? AND name = ?",
+                    (parent_id, clean_name),
+                ).fetchall()
+                if len(matches) > 1:
+                    raise ValueError(
+                        f"Folder path is ambiguous: {'/'.join(traversed)}"
+                    )
+                if matches:
+                    parent_id = matches[0]["id"]
+                else:
+                    folder = self._create_folder(
+                        connection, clean_name, parent_id, max_depth
+                    )
+                    parent_id = folder["id"]
+            note_id = self._create_note(
+                connection,
+                filename,
+                content,
+                parent_id,
+                actor_name,
+                client_name,
+            )
         return self.get_note(note_id)  # type: ignore[return-value]
 
     def update_note(
@@ -749,9 +890,11 @@ class Database:
             if expected_version is not None and current["version"] != expected_version:
                 raise VersionConflict(current["version"])
             next_content = current["content"] if content is None else content
-            next_filename = current["filename"] if filename is None else filename.strip()
-            if not next_filename.lower().endswith(".md"):
-                next_filename += ".md"
+            next_filename = (
+                current["filename"]
+                if filename is None
+                else self._clean_note_filename(filename)
+            )
             next_folder = current["folder_id"] if folder_id is _UNCHANGED else folder_id
             if next_folder == "unfiled":
                 next_folder = None
@@ -917,7 +1060,7 @@ class VersionConflict(Exception):
         self.current_version = current_version
 
 
-class FolderDepthError(Exception):
+class FolderDepthError(ValueError):
     def __init__(self, max_depth: int):
         super().__init__(f"Folder depth cannot exceed {max_depth}")
         self.max_depth = max_depth

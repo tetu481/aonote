@@ -64,6 +64,26 @@ TOOLS = [
         {"type": "object", "properties": {}},
     ),
     _tool(
+        "create_folder",
+        "Create a workspace folder at the root or below an existing parent folder.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                },
+                "parent_id": {
+                    "type": ["string", "null"],
+                    "description": "Parent folder ID, or null for a root folder",
+                },
+            },
+            "required": ["name"],
+        },
+        read_only=False,
+    ),
+    _tool(
         "search_notes",
         "Search note titles, filenames, and Markdown bodies with SQLite FTS5 keyword search.",
         {
@@ -77,15 +97,23 @@ TOOLS = [
     ),
     _tool(
         "create_note",
-        "Create a Markdown note. Include a clear H1 heading in content.",
+        "Create a Markdown note by filename and folder ID, or by a workspace path that automatically creates missing folders. Include a clear H1 heading in content.",
         {
             "type": "object",
             "properties": {
-                "filename": {"type": "string", "description": "Filename ending in .md"},
+                "filename": {
+                    "type": "string",
+                    "description": "Filename ending in .md; use with folder_id",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Workspace path such as Projects/test/note.md; missing folders are created automatically",
+                },
                 "content": {"type": "string"},
                 "folder_id": {"type": ["string", "null"]},
             },
-            "required": ["filename", "content"],
+            "required": ["content"],
+            "oneOf": [{"required": ["filename"]}, {"required": ["path"]}],
         },
         read_only=False,
     ),
@@ -219,7 +247,7 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {"tools": {"listChanged": False}},
                     "serverInfo": {"name": "aonote", "title": "aonote Markdown Workspace", "version": "0.1.0"},
-                    "instructions": "Read a note directly with a known ID or copied workspace path; otherwise search or list first. Read a note before updating it and pass its version to prevent conflicts.",
+                    "instructions": "Read a note directly with a known ID or copied workspace path; otherwise search or list first. Create a folder with create_folder, or create a note and any missing parent folders by passing a workspace path to create_note. Read a note before updating it and pass its version to prevent conflicts.",
                 },
             }
         if method == "ping":
@@ -265,6 +293,13 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
         if name == "list_folders":
             require_scope(principal, "notes:read")
             return db.list_folders()
+        if name == "create_folder":
+            require_scope(principal, "notes:write")
+            return db.create_folder(
+                str(arguments.get("name") or ""),
+                arguments.get("parent_id"),
+                settings.max_folder_depth,
+            )
         if name == "search_notes":
             require_scope(principal, "notes:search")
             query = str(arguments.get("query", "")).strip()
@@ -273,9 +308,24 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
             return db.search(query, max(1, min(int(arguments.get("limit", 10)), 50)))
         if name == "create_note":
             require_scope(principal, "notes:write")
+            filename = str(arguments.get("filename") or "").strip()
+            note_path = str(arguments.get("path") or "").strip()
+            if bool(filename) == bool(note_path):
+                raise ValueError("Provide exactly one of filename or path")
+            if "content" not in arguments:
+                raise ValueError("content is required")
+            if note_path:
+                if arguments.get("folder_id") is not None:
+                    raise ValueError("folder_id cannot be used with path")
+                return db.create_note_by_path(
+                    note_path,
+                    str(arguments["content"]),
+                    settings.max_folder_depth,
+                    **actor,
+                )
             return db.create_note(
-                str(arguments.get("filename", "")),
-                str(arguments.get("content", "")),
+                filename,
+                str(arguments["content"]),
                 arguments.get("folder_id"),
                 **actor,
             )

@@ -131,6 +131,8 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
             )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code=409, detail="同じ名前のノートがあります") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.patch("/notes/{note_id}")
     async def update_note(
