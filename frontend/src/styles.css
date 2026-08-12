@@ -94,13 +94,15 @@ kbd { font-family: var(--mono); font-size: 11px; border: 0; color: #708299; back
 .folder-row { padding: 0 3px; gap: 0; cursor: default; font-weight: 500; }
 .folder-toggle { min-width: 0; height: 100%; flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 5px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
 .folder-toggle span { min-width: 0; flex: 1; }
+.folder-row.selected { color: #075ec9; background: var(--selection); }
+.folder-row.selected svg { color: var(--blue); }
 .folder-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .12s ease; }
 .folder-actions button { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 5px; color: #6d8098; background: transparent; cursor: pointer; }
 .folder-actions button:hover { color: var(--blue); background: #dbeaff; }
 .folder-actions button.folder-delete:hover { color: var(--danger); background: #ffe4e1; }
 .folder-row:hover .folder-actions, .folder-row:focus-within .folder-actions { opacity: 1; }
 .tree-children { margin-left: 18px; }
-.note-row { position: relative; padding-left: 12px; }
+.note-row { position: relative; width: calc(100% - 18px); margin-left: 18px; padding-left: 12px; }
 .note-row.selected { color: #075ec9; font-weight: 600; background: var(--selection); }
 .note-row.selected::before { content: ""; position: absolute; width: 3px; left: 0; top: 5px; bottom: 5px; border-radius: 2px; background: var(--blue); }
 .note-row.selected svg { color: var(--blue); }

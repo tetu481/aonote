@@ -6,13 +6,15 @@ import type { FolderNode, NoteSummary } from "../types";
 type FolderProps = {
   folder: FolderNode;
   selectedId: string | null;
+  selectedFolderId: string | null;
   onSelect: (note: NoteSummary) => void;
+  onSelectFolder: (folderId: string) => void;
   onRename: (folder: FolderNode) => void;
   onDelete: (folder: FolderNode) => void;
   revealKey: number;
 };
 
-const FolderTree = memo(function FolderTree({ folder, selectedId, onSelect, onRename, onDelete, revealKey }: FolderProps) {
+const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolderId, onSelect, onSelectFolder, onRename, onDelete, revealKey }: FolderProps) {
   const [open, setOpen] = useState(folder.name === "ようこそ");
   const containsSelection = folderContainsNote(folder, selectedId);
   useEffect(() => {
@@ -20,8 +22,8 @@ const FolderTree = memo(function FolderTree({ folder, selectedId, onSelect, onRe
   }, [containsSelection, revealKey]);
   return (
     <div className="folder-group">
-      <div className="tree-row folder-row">
-        <button className="folder-toggle" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
+      <div className={`tree-row folder-row ${folder.id === selectedFolderId ? "selected" : ""}`}>
+        <button className="folder-toggle" onClick={() => { onSelectFolder(folder.id); setOpen((value) => !value); }} aria-expanded={open}>
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
           {open ? <FolderOpen size={17} /> : <Folder size={17} />}
           <span>{folder.name}</span>
@@ -33,7 +35,7 @@ const FolderTree = memo(function FolderTree({ folder, selectedId, onSelect, onRe
       </div>
       {open ? (
         <div className="tree-children">
-          {folder.folders.map((child) => <FolderTree key={child.id} folder={child} selectedId={selectedId} revealKey={revealKey} onSelect={onSelect} onRename={onRename} onDelete={onDelete} />)}
+          {folder.folders.map((child) => <FolderTree key={child.id} folder={child} selectedId={selectedId} selectedFolderId={selectedFolderId} revealKey={revealKey} onSelect={onSelect} onSelectFolder={onSelectFolder} onRename={onRename} onDelete={onDelete} />)}
           {folder.notes.map((note) => (
             <button
               key={note.id}
@@ -54,18 +56,20 @@ type Props = {
   tree: FolderNode[];
   recent: NoteSummary[];
   selectedId: string | null;
+  selectedFolderId: string | null;
   revealKey: number;
   mode: "files" | "recent";
   mobileOpen: boolean;
   desktopOpen: boolean;
   onMode: (mode: "files" | "recent") => void;
   onSelect: (note: NoteSummary) => void;
+  onSelectFolder: (folderId: string) => void;
   onSearch: () => void;
   onRenameFolder: (folder: FolderNode) => void;
   onDeleteFolder: (folder: FolderNode) => void;
 };
 
-export function Sidebar({ tree, recent, selectedId, revealKey, mode, mobileOpen, desktopOpen, onMode, onSelect, onSearch, onRenameFolder, onDeleteFolder }: Props) {
+export function Sidebar({ tree, recent, selectedId, selectedFolderId, revealKey, mode, mobileOpen, desktopOpen, onMode, onSelect, onSelectFolder, onSearch, onRenameFolder, onDeleteFolder }: Props) {
   return (
     <aside className={`sidebar-shell ${mobileOpen ? "mobile-open" : ""} ${desktopOpen ? "" : "desktop-collapsed"}`}>
       <nav className="activity-rail" aria-label="ワークスペースのナビゲーション">
@@ -81,7 +85,7 @@ export function Sidebar({ tree, recent, selectedId, revealKey, mode, mobileOpen,
         </div>
         <div className="tree-scroll">
           {mode === "files" ? tree.map((folder) => (
-            <FolderTree key={folder.id} folder={folder} selectedId={selectedId} revealKey={revealKey} onSelect={onSelect} onRename={onRenameFolder} onDelete={onDeleteFolder} />
+            <FolderTree key={folder.id} folder={folder} selectedId={selectedId} selectedFolderId={selectedFolderId} revealKey={revealKey} onSelect={onSelect} onSelectFolder={onSelectFolder} onRename={onRenameFolder} onDelete={onDeleteFolder} />
           )) : recent.map((note) => (
             <button key={note.id} className={`recent-row ${selectedId === note.id ? "selected" : ""}`} onClick={() => onSelect(note)}>
               <FileText size={16} /><span><strong>{note.title}</strong><small>{note.filename}</small></span>

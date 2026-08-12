@@ -13,7 +13,7 @@ import { SearchDialog } from "./components/SearchDialog";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { useAutosave } from "./hooks/useAutosave";
-import { flattenNotes } from "./folderUtils";
+import { flattenNotes, folderContainsFolder } from "./folderUtils";
 import type { AppStatus, FolderNode, Note, NoteSummary, SaveState } from "./types";
 import "./styles.css";
 
@@ -33,6 +33,7 @@ export default function App() {
   const [recent, setRecent] = useState<NoteSummary[]>([]);
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [note, setNote] = useState<Note | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [view, setView] = useState<ViewMode>("preview");
   const [sidebarMode, setSidebarMode] = useState<"files" | "recent">("files");
@@ -62,6 +63,7 @@ export default function App() {
     const selected = await api.note(id);
     setNote(selected);
     setContent(selected.content);
+    setSelectedFolderId(selected.folder_id ?? "unfiled");
     setSidebarMode("files");
     setDesktopSidebar(true);
     setRevealTree((value) => value + 1);
@@ -77,6 +79,7 @@ export default function App() {
       const notes = flattenNotes(nextTree);
       const preferred = notes.find((item) => item.filename === "01-ようこそ.md") ?? notes[0];
       if (preferred) await selectById(preferred.id);
+      else setSelectedFolderId(nextTree.find((folder) => folder.name === "ようこそ")?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) setAuthRequired(true);
     } finally { setLoading(false); }
@@ -119,6 +122,7 @@ export default function App() {
     const created = await api.createNote({ filename, folder_id: folderId, content: `# ${title}\n\n` });
     await refreshNavigation();
     setNote(created); setContent(created.content);
+    setSelectedFolderId(created.folder_id ?? "unfiled");
     setSidebarMode("files"); setDesktopSidebar(true);
   };
   const createFolder = async (name: string, parentId: string | null) => {
@@ -138,6 +142,7 @@ export default function App() {
   };
   const deleteSelectedFolder = async (folder: FolderNode) => {
     const noteCount = flattenNotes([folder]).length;
+    const removesSelectedFolder = folderContainsFolder(folder, selectedFolderId);
     const message = `「${folder.name}」と配下のフォルダを削除しますか？\n配下のノート${noteCount}件は削除せず「未整理」へ移動します。`;
     if (!window.confirm(message)) return;
     await api.deleteFolder(folder.id);
@@ -146,12 +151,14 @@ export default function App() {
       note ? api.note(note.id) : Promise.resolve(null),
     ]);
     if (selected) { setNote(selected); setContent(selected.content); resetAutosave(selected); }
+    if (removesSelectedFolder) setSelectedFolderId(selected?.folder_id ?? "unfiled");
     setRevealTree((value) => value + 1);
   };
   const organizeCurrent = async (filename: string, folderId: string | null) => {
     if (!note) return;
     const updated = await api.relocateNote(note.id, { filename, folder_id: folderId, version: note.version });
     setNote(updated); setContent(updated.content); resetAutosave(updated);
+    setSelectedFolderId(updated.folder_id ?? "unfiled");
     await refreshNavigation();
     setSidebarMode("files"); setDesktopSidebar(true);
   };
@@ -199,7 +206,7 @@ export default function App() {
     <div className="app-shell">
       <TopBar onMenu={toggleWorkspace} onSearch={() => setSearchOpen(true)} onCreate={() => setNewOpen(true)} onCreateFolder={() => setNewFolderOpen(true)} sidebarOpen={window.matchMedia("(max-width: 900px)").matches ? mobileSidebar : desktopSidebar} />
       <div className="workspace">
-        <Sidebar tree={tree} recent={recent} selectedId={note?.id ?? null} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={setSidebarMode} onSelect={selectSummary} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} />
+        <Sidebar tree={tree} recent={recent} selectedId={note?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={setSidebarMode} onSelect={selectSummary} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} />
         {mobileSidebar ? <button className="sidebar-scrim" aria-label="サイドバーを閉じる" onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
           {note ? <>
@@ -235,8 +242,8 @@ export default function App() {
         </main>
       </div>
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={(id) => void selectById(id)} />
-      <NewNoteDialog open={newOpen} folders={tree} onClose={() => setNewOpen(false)} onCreate={createNote} />
-      <NewFolderDialog open={newFolderOpen} folders={tree} maxDepth={status?.max_folder_depth ?? 3} onClose={() => setNewFolderOpen(false)} onCreate={createFolder} />
+      <NewNoteDialog open={newOpen} folders={tree} defaultFolderId={selectedFolderId === "unfiled" ? null : selectedFolderId} onClose={() => setNewOpen(false)} onCreate={createNote} />
+      <NewFolderDialog open={newFolderOpen} folders={tree} maxDepth={status?.max_folder_depth ?? 3} defaultParentId={selectedFolderId === "unfiled" ? null : selectedFolderId} onClose={() => setNewFolderOpen(false)} onCreate={createFolder} />
       <RenameFolderDialog folder={folderToRename} onClose={() => setFolderToRename(null)} onSave={renameSelectedFolder} />
       <OrganizeNoteDialog open={organizeOpen} note={note} folders={tree} onClose={() => setOrganizeOpen(false)} onSave={organizeCurrent} />
     </div>

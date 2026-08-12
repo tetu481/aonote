@@ -24,3 +24,9 @@ export function folderContainsNote(folder: FolderNode, noteId: string | null): b
   return folder.notes.some((note) => note.id === noteId)
     || folder.folders.some((child) => folderContainsNote(child, noteId));
 }
+
+export function folderContainsFolder(folder: FolderNode, folderId: string | null): boolean {
+  if (!folderId) return false;
+  return folder.id === folderId
+    || folder.folders.some((child) => folderContainsFolder(child, folderId));
+}

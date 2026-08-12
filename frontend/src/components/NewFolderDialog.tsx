@@ -6,25 +6,31 @@ type Props = {
   open: boolean;
   folders: FolderNode[];
   maxDepth: number;
+  defaultParentId: string | null;
   onClose: () => void;
   onCreate: (name: string, parentId: string | null) => Promise<void>;
 };
 
-export function NewFolderDialog({ open, folders, maxDepth, onClose, onCreate }: Props) {
+export function NewFolderDialog({ open, folders, maxDepth, defaultParentId, onClose, onCreate }: Props) {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const wasOpenRef = useRef(false);
   const parents = useMemo(() => flattenFolders(folders).filter((folder) => folder.depth < maxDepth), [folders, maxDepth]);
 
   useEffect(() => {
-    if (!open) return;
-    setName("");
-    setParentId(null);
-    setError("");
-    window.setTimeout(() => inputRef.current?.focus(), 20);
-  }, [open]);
+    let focusTimer: number | undefined;
+    if (open && !wasOpenRef.current) {
+      setName("");
+      setParentId(parents.some((folder) => folder.id === defaultParentId) ? defaultParentId : null);
+      setError("");
+      focusTimer = window.setTimeout(() => inputRef.current?.focus(), 20);
+    }
+    wasOpenRef.current = open;
+    return () => { if (focusTimer !== undefined) window.clearTimeout(focusTimer); };
+  }, [open, defaultParentId, parents]);
 
   if (!open) return null;
   return <div className="dialog-backdrop" onMouseDown={onClose}>

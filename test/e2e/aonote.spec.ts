@@ -43,6 +43,12 @@ test("ワークスペース機能をデスクトップで操作できる", async
   await expect(page.getByLabel("Markdownプレビュー")).toBeVisible();
   await expect(page.locator(".breadcrumb")).toContainText("01-ようこそ.md");
   await expect(page.getByRole("button", { name: "01-ようこそ.md", exact: true })).toHaveClass(/selected/);
+  await page.getByRole("button", { name: "新規ノート" }).click();
+  await expect(page.locator(".new-note-dialog select option:checked")).toHaveText("ようこそ");
+  await page.getByRole("button", { name: "キャンセル" }).click();
+  await page.getByRole("button", { name: "新規フォルダ" }).click();
+  await expect(page.locator(".new-note-dialog select option:checked")).toHaveText("ようこそ");
+  await page.getByRole("button", { name: "キャンセル" }).click();
   await page.screenshot({ path: "/tmp/aonote-initial-welcome.png", fullPage: false });
   await page.getByRole("button", { name: "03-SQLite全文検索.md", exact: true }).click();
   await expect(page.getByLabel("Markdownプレビュー")).toContainText("aonoteの検索はSQLite FTS5を利用します。");
@@ -69,6 +75,7 @@ test("ワークスペース機能をデスクトップで操作できる", async
     await expect(dialog.getByRole("heading", { name: "新しいフォルダ" })).toBeVisible();
     await dialog.getByLabel("フォルダ名").fill(name);
     if (parent) await selectOptionContaining(page, ".new-note-dialog select", parent);
+    else await dialog.getByLabel("作成先").selectOption("");
     await dialog.getByRole("button", { name: "作成", exact: true }).click();
     await expect(dialog).toBeHidden();
   };
@@ -77,22 +84,39 @@ test("ワークスペース機能をデスクトップで操作できる", async
   await createFolder(secondName, rootName);
   await createFolder(thirdName, secondName);
 
+  const rootButton = page.getByRole("button", { name: rootName, exact: true });
+  await rootButton.click();
+  const secondButton = page.getByRole("button", { name: secondName, exact: true });
+  await secondButton.click();
+  await expect(secondButton.locator("..")).toHaveClass(/selected/);
+
+  await page.getByRole("button", { name: "新規ノート" }).click();
+  await expect(page.locator(".new-note-dialog select option:checked")).toHaveText(secondName);
+  await page.screenshot({ path: "/tmp/aonote-selected-folder-new-note.png", fullPage: false });
+  await page.getByRole("button", { name: "キャンセル" }).click();
+
+  await page.getByRole("button", { name: "新規フォルダ" }).click();
+  await expect(page.locator(".new-note-dialog select option:checked")).toHaveText(secondName);
+  await page.screenshot({ path: "/tmp/aonote-selected-folder-new-folder.png", fullPage: false });
+  await page.getByRole("button", { name: "キャンセル" }).click();
+
+  const thirdButton = page.getByRole("button", { name: thirdName, exact: true });
+  await thirdButton.click();
+  await expect(thirdButton.locator("..")).toHaveClass(/selected/);
+
   await page.getByRole("button", { name: "新規フォルダ" }).click();
   await expect(page.locator(".new-note-dialog select option").filter({ hasText: thirdName })).toHaveCount(0);
+  await expect(page.locator(".new-note-dialog select option:checked")).toHaveText("ワークスペース直下");
   await page.getByRole("button", { name: "キャンセル" }).click();
 
   await page.getByRole("button", { name: "新規ノート" }).click();
   const noteDialog = page.locator(".new-note-dialog");
-  await expect(noteDialog.locator("select option:checked")).toHaveText("ようこそ");
+  await expect(noteDialog.locator("select option:checked")).toHaveText(thirdName);
   await noteDialog.getByLabel("ファイル名").fill(`${noteBase}.md`);
-  await selectOptionContaining(page, ".new-note-dialog select", thirdName);
   await noteDialog.getByRole("button", { name: "作成", exact: true }).click();
   await expect(noteDialog).toBeHidden();
   await expect(page.getByLabel("Markdown本文")).toHaveValue(new RegExp(noteBase));
 
-  const rootButton = page.getByRole("button", { name: rootName, exact: true });
-  const secondButton = page.getByRole("button", { name: secondName, exact: true });
-  const thirdButton = page.getByRole("button", { name: thirdName, exact: true });
   await expect(rootButton).toHaveAttribute("aria-expanded", "true");
   await rootButton.click();
   await expect(rootButton).toHaveAttribute("aria-expanded", "false");
@@ -129,6 +153,12 @@ test("ワークスペース機能をデスクトップで操作できる", async
   await expect(page.getByRole("button", { name: thirdName, exact: true })).toHaveCount(0);
   await expect(page.locator(".breadcrumb")).toContainText("未整理");
   await expect(page.getByLabel("Markdown本文")).toHaveValue(new RegExp(noteBase));
+  await page.getByRole("button", { name: "新規ノート" }).click();
+  await expect(page.locator(".new-note-dialog select option:checked")).toHaveText("未整理");
+  await page.getByRole("button", { name: "キャンセル" }).click();
+  await page.getByRole("button", { name: "新規フォルダ" }).click();
+  await expect(page.locator(".new-note-dialog select option:checked")).toHaveText("ワークスペース直下");
+  await page.getByRole("button", { name: "キャンセル" }).click();
 
   await page.getByRole("button", { name: "ノートの名前と保存先を変更" }).click();
   const organize = page.locator(".new-note-dialog");
@@ -212,6 +242,11 @@ test("ワークスペースを名前順で表示する", async ({ page, request 
   const noteLabels = alphaGroup.locator(":scope > .tree-children > .note-row > span");
   await expect(noteLabels).toHaveCount(3);
   expect(await noteLabels.allTextContents()).toEqual([noteNames[2], noteNames[1], noteNames[0]]);
+  const childFolderIcon = await alphaGroup.locator(":scope > .tree-children > .folder-group").first().locator(":scope > .folder-row .folder-toggle > svg").nth(1).boundingBox();
+  const directNoteIcon = await alphaGroup.locator(":scope > .tree-children > .note-row > svg").first().boundingBox();
+  expect(childFolderIcon).not.toBeNull();
+  expect(directNoteIcon).not.toBeNull();
+  expect(Math.abs(childFolderIcon!.x - directNoteIcon!.x)).toBeLessThanOrEqual(1);
   const directClasses = await alphaGroup.locator(":scope > .tree-children > *").evaluateAll(
     (elements) => elements.map((element) => element.className),
   );
