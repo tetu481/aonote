@@ -87,14 +87,14 @@ def _consent_html(
 :root{{font-family:Inter,'Noto Sans JP',sans-serif;color:#14233f;background:#edf6ff}}
 *{{box-sizing:border-box}}body{{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px}}
 main{{width:min(440px,100%);background:white;border:1px solid #cddff2;border-radius:18px;padding:32px;box-shadow:0 18px 55px #315c8d1a}}
-.brand{{display:flex;gap:10px;align-items:center;font-weight:750;font-size:19px}}.mark{{width:27px;height:27px;border:2px solid #1768dc;border-radius:7px}}
+.brand{{display:flex;gap:10px;align-items:center;font-weight:750;font-size:19px}}.mark{{width:29px;height:26px;fill:none;stroke:#1768dc;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}}
 h1{{font-size:25px;line-height:1.35;margin:28px 0 8px}}p{{color:#566984;line-height:1.65}}
 .scope-list{{display:grid;gap:10px;margin-top:18px}}.scope-option{{display:flex;gap:12px;align-items:flex-start;margin:0;border:1px solid #d5e4f3;border-radius:12px;padding:14px;background:#f8fbff;cursor:pointer;transition:.15s ease}}
 .scope-option:hover{{border-color:#8eb7e7;background:#f2f8ff}}.scope-option:has(input:checked){{border-color:#8ab7eb;background:#edf6ff}}.scope-option input{{width:18px;height:18px;margin:2px 0 0;accent-color:#1768dc;flex:0 0 auto}}
 .scope-copy{{display:grid;grid-template-columns:auto 1fr;gap:3px 9px;min-width:0}}.scope-copy strong{{font-size:14px;color:#203956}}.scope-copy code{{align-self:center;color:#57708c;font-size:11px}}.scope-copy small{{grid-column:1/-1;color:#637993;line-height:1.45}}
 label{{display:block;font-size:13px;font-weight:650;margin:20px 0 7px}}input[type=text],input[type=password]{{width:100%;border:1px solid #b9cee5;border-radius:9px;padding:12px;font:inherit;outline:none}}input[type=text]:focus,input[type=password]:focus{{border-color:#1768dc;box-shadow:0 0 0 3px #1768dc1a}}
 button{{width:100%;margin-top:22px;border:0;border-radius:9px;background:#1768dc;color:white;padding:12px;font:700 14px inherit;cursor:pointer}}.error{{color:#b3261e;background:#fff0ef;padding:10px;border-radius:8px}}
-</style></head><body><main><div class="brand"><span class="mark"></span>aonote</div>
+</style></head><body><main><div class="brand"><svg class="mark" viewBox="0 0 32 28" aria-hidden="true"><path d="M2.5 3.5c4-1.4 8.2-.9 13.5 2.1v18.6c-4.7-2.8-9-3.4-13.5-1.8V3.5Z"></path><path d="M29.5 3.5c-4-1.4-8.2-.9-13.5 2.1v18.6c4.7-2.8 9-3.4 13.5-1.8V3.5Z"></path></svg>aonote</div>
 <h1>{escape(client_name)} を接続</h1><p>このクライアントに許可する権限を選択してください。</p>{error_html}
 <form method="post" action="/oauth/authorize">{hidden}<div class="scope-list">{scope_items}</div>
 <label for="actor_name">表示名</label>

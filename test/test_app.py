@@ -317,6 +317,8 @@ async def test_oauth_consent_scope_checkboxes(tmp_path: Path):
         assert 'value="notes:write" checked' in consent.text
         assert 'name="actor_name"' in consent.text
         assert 'maxlength="80"' in consent.text
+        assert '<svg class="mark" viewBox="0 0 32 28" aria-hidden="true">' in consent.text
+        assert consent.text.count('<path d="M') == 2
 
         missing_name = await client.post(
             "/oauth/authorize",
