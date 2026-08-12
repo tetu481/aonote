@@ -8,8 +8,13 @@ import httpx
 import pytest
 
 from aonote.config import Settings
-from aonote.db import SEED_NOTES, Database
-from aonote.main import create_app
+from aonote.db import (
+    LEGACY_AGENT_SKILL_NOTE,
+    LEGACY_MCP_NOTE,
+    SEED_NOTES,
+    Database,
+)
+from aonote.application import create_app
 
 
 def make_client(tmp_path: Path, bypass: bool = True) -> httpx.AsyncClient:
@@ -98,6 +103,7 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         skill_note_response = await client.get(f"/api/notes/{skill_note['id']}")
         assert skill_note_response.status_code == 200
         assert "name: aonote-workspace" in skill_note_response.json()["content"]
+        assert "`get_note` accepts exactly one of `note_id` or `path`" in skill_note_response.json()["content"]
         assert "`update_note`" in skill_note_response.json()["content"]
         assert "`delete_note`" in skill_note_response.json()["content"]
         mcp_note = next(note for note in folders[0]["notes"] if note["filename"] == "02-MCP連携.md")
@@ -184,6 +190,12 @@ async def test_oauth_discovery_pkce_and_mcp_tools(tmp_path: Path):
             "search_notes", "get_note", "list_folders", "create_note", "update_note",
             "rename_note", "move_note",
         }
+        get_note_tool = next(tool for tool in tools if tool["name"] == "get_note")
+        assert set(get_note_tool["inputSchema"]["properties"]) == {"note_id", "path"}
+        assert get_note_tool["inputSchema"]["oneOf"] == [
+            {"required": ["note_id"]},
+            {"required": ["path"]},
+        ]
 
         search_response = await client.post(
             "/mcp",
@@ -198,6 +210,59 @@ async def test_oauth_discovery_pkce_and_mcp_tools(tmp_path: Path):
         search = search_response.json()["result"]
         assert search["isError"] is False
         assert search["structuredContent"]["items"]
+
+        path_response = await client.post(
+            "/mcp",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_note",
+                    "arguments": {"path": "ようこそ/02-MCP連携.md"},
+                },
+            },
+        )
+        path_result = path_response.json()["result"]
+        assert path_result["isError"] is False
+        path_note = path_result["structuredContent"]
+        assert path_note["path"] == "ようこそ/02-MCP連携.md"
+        assert "# MCP連携のセットアップ" in path_note["content"]
+
+        id_response = await client.post(
+            "/mcp",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_note",
+                    "arguments": {"note_id": path_note["id"]},
+                },
+            },
+        )
+        assert id_response.json()["result"]["structuredContent"]["id"] == path_note["id"]
+
+        both_response = await client.post(
+            "/mcp",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "get_note",
+                    "arguments": {
+                        "note_id": path_note["id"],
+                        "path": path_note["path"],
+                    },
+                },
+            },
+        )
+        assert both_response.json()["result"]["isError"] is True
+        assert "exactly one" in both_response.json()["result"]["content"][0]["text"]
 
 
 @pytest.mark.anyio
@@ -341,6 +406,43 @@ async def test_nested_folders_relocation_and_depth_limit(tmp_path: Path):
 
         assert (await client.patch("/api/folders/unfiled", json={"name": "変更不可"})).status_code == 404
         assert (await client.delete("/api/folders/unfiled")).status_code == 404
+
+
+def test_get_note_by_workspace_path(tmp_path: Path):
+    database = Database(tmp_path / "path-lookup.sqlite3")
+    database.initialize()
+    projects = database.create_folder("Projects")
+    guides = database.create_folder("Guides", projects["id"])
+    nested = database.create_note(
+        "Setup.md", "# Setup", guides["id"]
+    )
+    unfiled = database.create_note("memo.md", "# memo")
+
+    assert database.get_note_by_path("Projects/Guides/Setup.md")["id"] == nested["id"]
+    assert database.get_note_by_path("Projects/Guides/Setup.md")["path"] == (
+        "Projects/Guides/Setup.md"
+    )
+    assert database.get_note_by_path("memo.md")["id"] == unfiled["id"]
+    assert database.get_note_by_path("Projects/Guides/setup.md") is None
+    assert database.get_note_by_path("missing.md") is None
+
+    for invalid_path in (
+        "",
+        "/memo.md",
+        "Projects//Setup.md",
+        "Projects/../Setup.md",
+        "Projects\\Setup.md",
+        "Projects/Setup",
+    ):
+        with pytest.raises(ValueError):
+            database.get_note_by_path(invalid_path)
+
+    duplicate_a = database.create_folder("Duplicate")
+    duplicate_b = database.create_folder("Duplicate")
+    database.create_note("same.md", "# first", duplicate_a["id"])
+    database.create_note("same.md", "# second", duplicate_b["id"])
+    with pytest.raises(ValueError, match="ambiguous"):
+        database.get_note_by_path("Duplicate/same.md")
 
 
 @pytest.mark.anyio
@@ -533,8 +635,24 @@ def test_only_seed_notes_receive_brand_case_migration(tmp_path: Path):
             "UPDATE notes SET title = 'Aonoteへようこそ', content = ? WHERE id = ?",
             (legacy_content, seed["id"]),
         )
-        customized_seed = connection.execute(
+        legacy_mcp = connection.execute(
             "SELECT * FROM notes WHERE folder_id = ? AND filename = '02-MCP連携.md'",
+            (welcome_folder,),
+        ).fetchone()
+        legacy_skill = connection.execute(
+            "SELECT * FROM notes WHERE folder_id = ? AND filename = '04-Agent Skill.md'",
+            (welcome_folder,),
+        ).fetchone()
+        connection.execute(
+            "UPDATE notes SET content = ? WHERE id = ?",
+            (LEGACY_MCP_NOTE, legacy_mcp["id"]),
+        )
+        connection.execute(
+            "UPDATE notes SET content = ? WHERE id = ?",
+            (LEGACY_AGENT_SKILL_NOTE, legacy_skill["id"]),
+        )
+        customized_seed = connection.execute(
+            "SELECT * FROM notes WHERE folder_id = ? AND filename = '03-SQLite全文検索.md'",
             (welcome_folder,),
         ).fetchone()
         connection.execute(
@@ -562,12 +680,18 @@ def test_only_seed_notes_receive_brand_case_migration(tmp_path: Path):
     assert migrated["content"] == SEED_NOTES["01-ようこそ.md"]
     assert migrated["version"] == original_version + 1
     assert migrated["updated_at"] == original_updated_at
+    assert database.get_note(legacy_mcp["id"])["content"] == SEED_NOTES["02-MCP連携.md"]
+    assert database.get_note(legacy_mcp["id"])["version"] == legacy_mcp["version"] + 1
+    assert database.get_note(legacy_skill["id"])["content"] == SEED_NOTES["04-Agent Skill.md"]
+    assert database.get_note(legacy_skill["id"])["version"] == legacy_skill["version"] + 1
     assert database.get_note(customized_seed["id"])["content"] == "# AONOTEの個人設定"
     assert database.get_note(personal["id"])["content"] == personal["content"]
     assert database.get_note(lookalike["id"])["content"] == lookalike["content"]
 
     database.initialize()
     assert database.get_note(seed["id"])["version"] == original_version + 1
+    assert database.get_note(legacy_mcp["id"])["version"] == legacy_mcp["version"] + 1
+    assert database.get_note(legacy_skill["id"])["version"] == legacy_skill["version"] + 1
     with database.connect() as connection:
         revisions = connection.execute(
             "SELECT title, content, version FROM note_revisions WHERE note_id = ?",
@@ -580,3 +704,7 @@ def test_only_seed_notes_receive_brand_case_migration(tmp_path: Path):
                 "version": original_version,
             }
         ]
+        assert connection.execute(
+            "SELECT COUNT(*) FROM note_revisions WHERE note_id IN (?, ?)",
+            (legacy_mcp["id"], legacy_skill["id"]),
+        ).fetchone()[0] == 2

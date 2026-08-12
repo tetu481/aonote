@@ -16,6 +16,34 @@ TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 LEGACY_BRAND_RE = re.compile(r"aonote", re.IGNORECASE)
 _UNCHANGED = object()
 
+AGENT_SKILL_CORE_LOOKUP = (
+    "1. Use a user-provided workspace path directly; otherwise search or list notes "
+    "before creating or editing them.\n"
+)
+AGENT_SKILL_DISCOVERY_LOOKUP = (
+    "- Use `get_note` directly when the required note ID or workspace path is known.\n"
+)
+AGENT_SKILL_PATH_GUIDANCE = """## Note lookup
+
+- `get_note` accepts exactly one of `note_id` or `path`.
+- A path is workspace-relative, uses `/` separators, and includes the `.md` filename, for example `Projects/guide.md`.
+- A note in 未整理 uses only its filename, for example `memo.md`.
+- Paths are case-sensitive and change after a rename or move; note IDs remain stable.
+- Prefer a path copied from the aonote browser when the user provides one.
+
+"""
+MCP_PATH_GUIDANCE = """## パスでノートを取得
+
+`get_note`にはノートIDだけでなく、ブラウザのコピーボタンで取得したワークスペース相対パスも指定できます。
+
+```json
+{"path": "ようこそ/01-ようこそ.md"}
+```
+
+未整理のノートは`memo.md`のようにファイル名だけを指定します。`note_id`と`path`はどちらか一方だけを渡してください。
+
+"""
+
 
 SEED_NOTES = {
     "01-ようこそ.md": """# aonoteへようこそ
@@ -31,7 +59,7 @@ aonoteは、あなたとAIが同じ知識を育てるためのMarkdownワーク�
 
 次は [[02-MCP連携|MCP連携]] を開いて、AIからノートを利用する方法を確認してください。
 """,
-    "02-MCP連携.md": """# MCP連携のセットアップ
+    "02-MCP連携.md": f"""# MCP連携のセットアップ
 
 ## 概要
 
@@ -47,7 +75,7 @@ aonoteはOAuth 2.1による認可コードフローとPKCE（S256）を採用し
 - スコープは最小権限の原則に基づきます
 - MCPへの各リクエストでトークンを検証します
 
-## ChatGPTに接続
+{MCP_PATH_GUIDANCE}## ChatGPTに接続
 
 ChatGPTのプラグイン設定で、公開HTTPSエンドポイントを指定します。
 
@@ -71,7 +99,7 @@ aonoteの検索はSQLite FTS5を利用します。
 
 個人用のノートでは、構成が単純で説明可能な検索がよく合います。
 """,
-    "04-Agent Skill.md": """# aonote — Agent Skill
+    "04-Agent Skill.md": f"""# aonote — Agent Skill
 
 AIエージェントがaonoteをMCP経由で操作するためのSkillテンプレートです。以下の内容をエージェントの`SKILL.md`にコピーして利用してください。
 
@@ -87,8 +115,7 @@ Use aonote MCP as the operational layer for this Markdown workspace. Prefer aono
 
 ## Core rules
 
-1. Search or list notes before creating or editing them.
-2. Use `get_note` before updating, renaming, or moving an existing note.
+{AGENT_SKILL_CORE_LOOKUP}2. Use `get_note` before updating, renaming, or moving an existing note.
 3. Pass the current `version` returned by `get_note` to `update_note`, `rename_note`, and `move_note`.
 4. If a version conflict occurs, read the note again and carefully reapply the requested change.
 5. Preserve unrelated content when using `update_note`, because it replaces the complete Markdown body.
@@ -105,12 +132,11 @@ Use aonote MCP as the operational layer for this Markdown workspace. Prefer aono
 
 Respect the granted scopes. If a required scope is unavailable, explain the limitation instead of retrying the operation.
 
-## Discovery
+{AGENT_SKILL_PATH_GUIDANCE}## Discovery
 
 - Use `search_notes` for keyword searches across titles, filenames, and Markdown bodies.
 - Use `list_notes` to browse recently updated notes.
-- Use `get_note` only after identifying the required note ID.
-- Use `list_folders` when folder IDs or workspace structure matter.
+{AGENT_SKILL_DISCOVERY_LOOKUP}- Use `list_folders` when folder IDs or workspace structure matter.
 - Keep broad list operations limited and prefer a focused keyword search when possible.
 
 ## Writing
@@ -146,6 +172,24 @@ For organization:
 - `delete_note`
 ````
 """,
+}
+
+LEGACY_AGENT_SKILL_NOTE = (
+    SEED_NOTES["04-Agent Skill.md"]
+    .replace(
+        AGENT_SKILL_CORE_LOOKUP,
+        "1. Search or list notes before creating or editing them.\n",
+    )
+    .replace(AGENT_SKILL_PATH_GUIDANCE, "")
+    .replace(
+        AGENT_SKILL_DISCOVERY_LOOKUP,
+        "- Use `get_note` only after identifying the required note ID.\n",
+    )
+)
+LEGACY_MCP_NOTE = SEED_NOTES["02-MCP連携.md"].replace(MCP_PATH_GUIDANCE, "")
+LEGACY_SEED_NOTES = {
+    "02-MCP連携.md": (LEGACY_MCP_NOTE,),
+    "04-Agent Skill.md": (LEGACY_AGENT_SKILL_NOTE,),
 }
 
 
@@ -264,7 +308,7 @@ class Database:
                 """
             )
             self._migrate_schema(connection)
-            self._migrate_seed_branding(connection)
+            self._migrate_seed_content(connection)
             count = connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
             if count == 0:
                 self._seed(connection)
@@ -294,7 +338,7 @@ class Database:
                 if name not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
 
-    def _migrate_seed_branding(self, connection: sqlite3.Connection) -> None:
+    def _migrate_seed_content(self, connection: sqlite3.Connection) -> None:
         placeholders = ", ".join("?" for _ in SEED_NOTES)
         rows = connection.execute(
             f"""SELECT n.* FROM notes n
@@ -310,9 +354,19 @@ class Database:
             canonical_title = self.extract_title(canonical_content, row["filename"])
             content = LEGACY_BRAND_RE.sub("aonote", row["content"])
             title = LEGACY_BRAND_RE.sub("aonote", row["title"])
-            if content != canonical_content or title != canonical_title:
+            legacy_contents = {
+                LEGACY_BRAND_RE.sub("aonote", item)
+                for item in LEGACY_SEED_NOTES.get(row["filename"], ())
+            }
+            if (
+                content != canonical_content
+                and content not in legacy_contents
+            ) or title != canonical_title:
                 continue
-            if content == row["content"] and title == row["title"]:
+            if (
+                canonical_content == row["content"]
+                and canonical_title == row["title"]
+            ):
                 continue
             connection.execute(
                 """INSERT INTO note_revisions
@@ -323,7 +377,7 @@ class Database:
             connection.execute(
                 """UPDATE notes SET title = ?, content = ?, version = version + 1
                    WHERE id = ?""",
-                (title, content, row["id"]),
+                (canonical_title, canonical_content, row["id"]),
             )
             self._reindex(connection, row["id"])
             changed = True
@@ -448,6 +502,9 @@ class Database:
             folder_path = self._folder_path(connection, row["folder_id"])
             note["folder_name"] = folder_path[-1]["name"] if folder_path else None
             note["folder_path"] = folder_path
+            note["path"] = "/".join(
+                [*[folder["name"] for folder in folder_path], row["filename"]]
+            )
             note["backlinks"] = [
                 {"id": item["id"], "title": item["title"], "filename": item["filename"]}
                 for item in connection.execute(
@@ -458,6 +515,56 @@ class Database:
                 )
             ]
             return note
+
+    @staticmethod
+    def _note_path_parts(note_path: str) -> List[str]:
+        clean_path = note_path.strip()
+        if not clean_path:
+            raise ValueError("path is required")
+        if "\\" in clean_path:
+            raise ValueError("Note path must use / separators")
+        parts = clean_path.split("/")
+        if any(not part or part in {".", ".."} for part in parts):
+            raise ValueError("Invalid note path")
+        if not parts[-1].lower().endswith(".md"):
+            raise ValueError("Note path must end with .md")
+        return parts
+
+    def get_note_by_path(self, note_path: str) -> Optional[Dict[str, Any]]:
+        parts = self._note_path_parts(note_path)
+        folder_names, filename = parts[:-1], parts[-1]
+        with self.connect() as connection:
+            folder_ids: List[Optional[str]] = [None]
+            for folder_name in folder_names:
+                child_ids: List[Optional[str]] = []
+                for parent_id in folder_ids:
+                    child_ids.extend(
+                        row["id"]
+                        for row in connection.execute(
+                            """SELECT id FROM folders
+                               WHERE parent_id IS ? AND name = ?""",
+                            (parent_id, folder_name),
+                        )
+                    )
+                folder_ids = child_ids
+                if not folder_ids:
+                    return None
+
+            if folder_names:
+                placeholders = ", ".join("?" for _ in folder_ids)
+                rows = connection.execute(
+                    f"""SELECT id FROM notes
+                        WHERE folder_id IN ({placeholders}) AND filename = ?""",
+                    (*folder_ids, filename),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT id FROM notes WHERE folder_id IS NULL AND filename = ?",
+                    (filename,),
+                ).fetchall()
+        if len(rows) > 1:
+            raise ValueError(f"Note path is ambiguous: {note_path.strip()}")
+        return self.get_note(rows[0]["id"]) if rows else None
 
     def list_recent(self, limit: int = 12) -> List[Dict[str, Any]]:
         with self.connect() as connection:

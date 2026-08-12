@@ -12,7 +12,7 @@ aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWeb�
 - 最近のノート、Wikiリンク、バックリンク、更新履歴
 - MCP Streamable HTTP互換のJSON-RPCエンドポイント
 - OAuth 2.1の認可コード＋PKCE（S256）、DCR、Protected Resource Metadata
-- MCPツール：一覧、取得、検索、作成、更新、削除
+- MCPツール：一覧、ID／パス指定取得、検索、作成、更新、削除
 - ノートの作成者・修正者と作成日時・変更日時の表示
 - ノートの名前変更・移動、最大階層を設定できるフォルダ作成
 
@@ -66,7 +66,7 @@ ChatGPT接続には公開HTTPSが必要です。ローカル開発ではMCP Insp
 | ツール | 必要スコープ | 用途 |
 |---|---|---|
 | `list_notes` | `notes:read` | 最近のノートを一覧 |
-| `get_note` | `notes:read` | Markdown本文とバージョンを取得 |
+| `get_note` | `notes:read` | IDまたはワークスペース相対パスでMarkdown本文とバージョンを取得 |
 | `list_folders` | `notes:read` | 移動先フォルダのIDと階層を一覧 |
 | `search_notes` | `notes:search` | SQLite FTS5で全文検索 |
 | `create_note` | `notes:write` | ノートを作成 |
@@ -74,6 +74,14 @@ ChatGPT接続には公開HTTPSが必要です。ローカル開発ではMCP Insp
 | `rename_note` | `notes:write` | ノートのファイル名を変更 |
 | `move_note` | `notes:write` | ノートを別のフォルダへ移動 |
 | `delete_note` | `notes:write` | 明示確認後に削除 |
+
+`get_note`には`note_id`または`path`のどちらか一方を指定します。`path`は大文字・小文字を区別するワークスペース相対パスで、区切り文字には`/`を使います。ブラウザのパンくずリスト横にあるコピーボタンから、そのまま利用できるパスを取得できます。
+
+```json
+{"path": "ようこそ/01-ようこそ.md"}
+```
+
+未整理のノートは`{"path": "memo.md"}`のようにファイル名だけを指定します。パスは名前変更や移動によって変わりますが、`note_id`は変わりません。
 
 ## セキュリティ上の注意
 

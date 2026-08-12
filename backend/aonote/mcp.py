@@ -45,11 +45,17 @@ TOOLS = [
     ),
     _tool(
         "get_note",
-        "Read one complete Markdown note by its aonote note ID.",
+        "Read one complete Markdown note by its aonote note ID or workspace-relative path.",
         {
             "type": "object",
-            "properties": {"note_id": {"type": "string", "description": "aonote note ID"}},
-            "required": ["note_id"],
+            "properties": {
+                "note_id": {"type": "string", "description": "Stable aonote note ID"},
+                "path": {
+                    "type": "string",
+                    "description": "Case-sensitive workspace path such as ようこそ/01-ようこそ.md; use only the filename for 未整理",
+                },
+            },
+            "oneOf": [{"required": ["note_id"]}, {"required": ["path"]}],
         },
     ),
     _tool(
@@ -213,7 +219,7 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
                     "protocolVersion": PROTOCOL_VERSION,
                     "capabilities": {"tools": {"listChanged": False}},
                     "serverInfo": {"name": "aonote", "title": "aonote Markdown Workspace", "version": "0.1.0"},
-                    "instructions": "Search or list notes before reading. Read a note before updating it and pass its version to prevent conflicts.",
+                    "instructions": "Read a note directly with a known ID or copied workspace path; otherwise search or list first. Read a note before updating it and pass its version to prevent conflicts.",
                 },
             }
         if method == "ping":
@@ -248,7 +254,11 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
             return [{key: note[key] for key in ("id", "title", "filename", "version", "updated_at")} for note in notes]
         if name == "get_note":
             require_scope(principal, "notes:read")
-            note = db.get_note(str(arguments.get("note_id", "")))
+            note_id = str(arguments.get("note_id") or "").strip()
+            note_path = str(arguments.get("path") or "").strip()
+            if bool(note_id) == bool(note_path):
+                raise ValueError("Provide exactly one of note_id or path")
+            note = db.get_note(note_id) if note_id else db.get_note_by_path(note_path)
             if not note:
                 raise ValueError("Note not found")
             return note
