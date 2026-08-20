@@ -3,6 +3,7 @@ import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown"
 import remarkGfm from "remark-gfm";
 import { CircleAlert, Info, Lightbulb, ShieldAlert, TriangleAlert } from "lucide-react";
 import { remarkAlerts } from "../remarkAlerts";
+import { remarkHeadingIds } from "../remarkHeadingIds";
 import type { Note } from "../types";
 import { MermaidDiagram } from "./MermaidDiagram";
 
@@ -79,7 +80,7 @@ export function PreviewPane({ content, links, onWikilink }: Props) {
   return (
     <article className="preview-pane markdown-body" aria-label="Markdownプレビュー" onClick={followWikilink}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkAlerts]}
+        remarkPlugins={[remarkGfm, remarkAlerts, remarkHeadingIds]}
         components={markdownComponents}
       >{markdown}</ReactMarkdown>
     </article>

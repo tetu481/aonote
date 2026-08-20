@@ -256,6 +256,129 @@ test("ワークスペースを名前順で表示する", async ({ page, request 
   expect(browserIssues).toEqual([]);
 });
 
+test("削除済みノートをゴミ箱で閲覧・復元・完全削除できる", async ({ page, request }) => {
+  const browserIssues: string[] = [];
+  page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });
+  page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.message}`));
+  const suffix = Date.now().toString().slice(-7);
+  const folderName = `Trash-${suffix}`;
+  const noteName = `復元テスト-${suffix}.md`;
+  const purgeName = `完全削除-${suffix}.md`;
+  const folderResponse = await request.post("/api/folders", { data: { name: folderName, parent_id: null } });
+  expect(folderResponse.ok()).toBeTruthy();
+  const folder = await folderResponse.json();
+  for (const filename of [noteName, purgeName]) {
+    const created = await request.post("/api/notes", { data: { filename, folder_id: folder.id, content: `# ${filename}\n\nゴミ箱で読み取る本文` } });
+    expect(created.ok()).toBeTruthy();
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  const deleteFromSearch = async (filename: string) => {
+    await page.getByRole("button", { name: "ノートを検索" }).click();
+    await page.getByPlaceholder("タイトルと本文を検索…").fill(filename);
+    await page.locator(".search-results").getByRole("button", { name: new RegExp(filename.replace(".md", "")) }).click();
+    await expect(page.locator(".breadcrumb")).toContainText(filename);
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "ノートを削除" }).click();
+  };
+
+  await deleteFromSearch(noteName);
+  await page.getByRole("button", { name: "ゴミ箱", exact: true }).click();
+  await expect(page.getByText("ゴミ箱は空です")).toHaveCount(0);
+  const purgeControls = page.locator(".trash-purge-controls");
+  await expect(purgeControls).toContainText("日以上前に削除したノート");
+  const purgeDaysBox = await purgeControls.getByLabel("完全削除する経過日数").boundingBox();
+  expect(purgeDaysBox).not.toBeNull();
+  expect(Math.round(purgeDaysBox!.width)).toBe(52);
+  const trashRow = page.locator(".trash-row").filter({ hasText: noteName });
+  await expect(trashRow).toContainText(`${folderName}/${noteName}`);
+  await trashRow.click();
+  await expect(page.getByText("読み取り専用", { exact: true }).first()).toBeVisible();
+  await expect(page.getByLabel("Markdownプレビュー")).toContainText("ゴミ箱で読み取る本文");
+  await expect(page.getByLabel("Markdownエディタ")).toHaveCount(0);
+  await expect(page.locator(".view-switch")).toHaveCount(0);
+  await page.screenshot({ path: "/tmp/aonote-trash-preview.png", fullPage: false });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await page.locator(".sidebar-shell").boundingBox())?.x ?? 0).toBeLessThan(-300);
+  const mobileRestore = page.getByRole("button", { name: "元に戻す" });
+  await expect(mobileRestore).toBeVisible();
+  const restoreBox = await mobileRestore.boundingBox();
+  const mobileOutlineBox = await page.getByRole("button", { name: "目次を表示" }).boundingBox();
+  expect(restoreBox).not.toBeNull();
+  expect(mobileOutlineBox).not.toBeNull();
+  expect(restoreBox!.x + restoreBox!.width).toBeLessThanOrEqual(390);
+  expect(mobileOutlineBox!.x + mobileOutlineBox!.width).toBeLessThanOrEqual(390);
+  await expect(page.getByLabel("Markdownプレビュー")).toBeVisible();
+  await page.screenshot({ path: "/tmp/aonote-trash-mobile.png", fullPage: false });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "元に戻す" }).click();
+  await expect(page.locator(".breadcrumb")).toContainText(`${folderName}`);
+  await expect(page.locator(".breadcrumb")).toContainText(noteName);
+  await expect(page.locator(".trash-row").filter({ hasText: noteName })).toHaveCount(0);
+
+  await deleteFromSearch(purgeName);
+  await page.getByRole("button", { name: "ゴミ箱", exact: true }).click();
+  await expect(page.locator(".trash-row").filter({ hasText: purgeName })).toBeVisible();
+  await page.getByLabel("完全削除する経過日数").fill("0");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("取り消せません");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "完全削除", exact: true }).click();
+  await expect(page.locator(".trash-row").filter({ hasText: purgeName })).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("件を完全に削除しました");
+  expect(browserIssues).toEqual([]);
+});
+
+test("PCの目次を240pxで開閉し見出しへ移動できる", async ({ page, request }) => {
+  const browserIssues: string[] = [];
+  page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });
+  page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.message}`));
+  const suffix = Date.now().toString().slice(-7);
+  const filename = `目次移動-${suffix}.md`;
+  const content = `# 目次移動テスト\n\n${"前置きの本文です。\n\n".repeat(45)}## 対象見出し\n\nここへ移動します。`;
+  const created = await request.post("/api/notes", { data: { filename, folder_id: null, content } });
+  expect(created.ok()).toBeTruthy();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "ノートを検索" }).click();
+  await page.getByPlaceholder("タイトルと本文を検索…").fill(filename);
+  await page.locator(".search-results").getByRole("button", { name: /目次移動/ }).click();
+
+  const outline = page.getByLabel("ノートの目次と情報");
+  await expect(outline).toBeVisible();
+  const outlineBox = await outline.boundingBox();
+  expect(outlineBox).not.toBeNull();
+  expect(Math.round(outlineBox!.width)).toBe(240);
+  await page.getByRole("button", { name: "目次を閉じる" }).click();
+  await expect(outline).toBeHidden();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:outline-visible:v1"))).toBe("false");
+  await page.reload();
+  await expect(outline).toBeHidden();
+  await page.getByRole("button", { name: "目次を表示" }).click();
+  await expect(outline).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:outline-visible:v1"))).toBe("true");
+  await page.getByRole("button", { name: "ノートを検索" }).click();
+  await page.getByPlaceholder("タイトルと本文を検索…").fill(filename);
+  await page.locator(".search-results").getByRole("button", { name: /目次移動/ }).click();
+
+  const preview = page.getByLabel("Markdownプレビュー");
+  const target = preview.getByRole("heading", { name: "対象見出し" });
+  await expect(target).toHaveAttribute("id", "note-heading-1");
+  await outline.getByRole("link", { name: "対象見出し" }).click();
+  await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBeGreaterThan(500);
+  const targetBox = await target.boundingBox();
+  const previewBox = await preview.boundingBox();
+  expect(targetBox).not.toBeNull();
+  expect(previewBox).not.toBeNull();
+  expect(targetBox!.y).toBeGreaterThanOrEqual(previewBox!.y);
+  expect(targetBox!.y).toBeLessThan(previewBox!.y + previewBox!.height);
+  await page.screenshot({ path: "/tmp/aonote-outline-heading-navigation.png", fullPage: false });
+  expect(browserIssues).toEqual([]);
+});
+
 test("初期プレビューで表示名だけを表示し接続元はツールチップに出す", async ({ page }) => {
   const browserIssues: string[] = [];
   page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });

@@ -10,14 +10,21 @@ import { Outline } from "./components/Outline";
 import { PreviewPane } from "./components/PreviewPane";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { SearchDialog } from "./components/SearchDialog";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type SidebarMode } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { TrashDocument } from "./components/TrashDocument";
 import { useAutosave } from "./hooks/useAutosave";
 import { flattenNotes, folderContainsFolder } from "./folderUtils";
-import type { AppStatus, FolderNode, Note, NoteSummary, SaveState } from "./types";
+import type { AppStatus, FolderNode, Note, NoteSummary, SaveState, TrashedNote, TrashedNoteSummary } from "./types";
 import "./styles.css";
 
 type ViewMode = "edit" | "split" | "preview";
+const OUTLINE_STORAGE_KEY = "aonote:outline-visible:v1";
+
+function initialOutlineVisible() {
+  try { return window.localStorage.getItem(OUTLINE_STORAGE_KEY) !== "false"; }
+  catch { return true; }
+}
 
 const saveLabels: Record<SaveState, string> = {
   idle: "",
@@ -31,12 +38,14 @@ const saveLabels: Record<SaveState, string> = {
 export default function App() {
   const [tree, setTree] = useState<FolderNode[]>([]);
   const [recent, setRecent] = useState<NoteSummary[]>([]);
+  const [trash, setTrash] = useState<TrashedNoteSummary[]>([]);
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [note, setNote] = useState<Note | null>(null);
+  const [trashedNote, setTrashedNote] = useState<TrashedNote | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [view, setView] = useState<ViewMode>("preview");
-  const [sidebarMode, setSidebarMode] = useState<"files" | "recent">("files");
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("files");
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [desktopSidebar, setDesktopSidebar] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -47,6 +56,12 @@ export default function App() {
   const [reloadBusy, setReloadBusy] = useState(false);
   const [pathCopied, setPathCopied] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const [outlineVisible, setOutlineVisible] = useState(initialOutlineVisible);
+  const [compactOutline, setCompactOutline] = useState(() => window.matchMedia("(max-width: 1180px)").matches);
+  const [trashBusy, setTrashBusy] = useState(false);
+  const [trashMessage, setTrashMessage] = useState("");
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreError, setRestoreError] = useState("");
   const [revealTree, setRevealTree] = useState(0);
   const [authRequired, setAuthRequired] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -59,9 +74,17 @@ export default function App() {
     return nextTree;
   }, []);
 
+  const refreshTrash = useCallback(async () => {
+    const nextTrash = await api.trash();
+    setTrash(nextTrash);
+    return nextTrash;
+  }, []);
+
   const selectById = useCallback(async (id: string) => {
     const selected = await api.note(id);
     setNote(selected);
+    setTrashedNote(null);
+    setRestoreError("");
     setContent(selected.content);
     setSelectedFolderId(selected.folder_id ?? "unfiled");
     setSidebarMode("files");
@@ -74,8 +97,8 @@ export default function App() {
   const loadApp = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextStatus, nextTree, nextRecent] = await Promise.all([api.status(), api.tree(), api.recent()]);
-      setStatus(nextStatus); setTree(nextTree); setRecent(nextRecent); setAuthRequired(false);
+      const [nextStatus, nextTree, nextRecent, nextTrash] = await Promise.all([api.status(), api.tree(), api.recent(), api.trash()]);
+      setStatus(nextStatus); setTree(nextTree); setRecent(nextRecent); setTrash(nextTrash); setAuthRequired(false);
       const notes = flattenNotes(nextTree);
       const preferred = notes.find((item) => item.filename === "01-ようこそ.md") ?? notes[0];
       if (preferred) await selectById(preferred.id);
@@ -86,6 +109,16 @@ export default function App() {
   }, [selectById]);
 
   useEffect(() => { void loadApp(); }, [loadApp]);
+  useEffect(() => {
+    try { window.localStorage.setItem(OUTLINE_STORAGE_KEY, String(outlineVisible)); }
+    catch { /* localStorageが無効でも表示は継続する */ }
+  }, [outlineVisible]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1180px)");
+    const onChange = (event: MediaQueryListEvent) => setCompactOutline(event.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); }
@@ -117,17 +150,38 @@ export default function App() {
   if (loading) return <div className="loading-screen"><span className="loading-mark" />aonoteを開いています</div>;
 
   const selectSummary = (summary: NoteSummary) => { void selectById(summary.id); };
+  const selectTrashedSummary = async (summary: TrashedNoteSummary) => {
+    try {
+      const selected = await api.trashedNote(summary.id);
+      setTrashedNote(selected);
+      setRestoreError("");
+      setView("preview");
+      setSidebarMode("trash");
+      setMobileSidebar(false);
+      setOutlineOpen(false);
+    } catch (error) {
+      setTrashMessage(error instanceof Error ? error.message : "ゴミ箱のノートを開けませんでした");
+    }
+  };
+  const changeSidebarMode = (mode: SidebarMode) => {
+    setSidebarMode(mode);
+    if (mode !== "trash") {
+      setTrashedNote(null);
+      setRestoreError("");
+    }
+  };
   const createNote = async (filename: string, folderId: string | null) => {
     const title = filename.replace(/\.md$/i, "");
     const created = await api.createNote({ filename, folder_id: folderId, content: `# ${title}\n\n` });
     await refreshNavigation();
-    setNote(created); setContent(created.content);
+    setTrashedNote(null); setNote(created); setContent(created.content);
     setSelectedFolderId(created.folder_id ?? "unfiled");
     setSidebarMode("files"); setDesktopSidebar(true);
   };
   const createFolder = async (name: string, parentId: string | null) => {
     await api.createFolder({ name, parent_id: parentId });
     await refreshNavigation();
+    setTrashedNote(null);
     setSidebarMode("files"); setDesktopSidebar(true);
   };
   const renameSelectedFolder = async (name: string) => {
@@ -179,9 +233,39 @@ export default function App() {
   const deleteCurrent = async () => {
     if (!note || !window.confirm(`「${note.title}」を削除しますか？`)) return;
     await api.deleteNote(note.id);
-    const nextTree = await refreshNavigation();
+    const [nextTree] = await Promise.all([refreshNavigation(), refreshTrash()]);
     const next = flattenNotes(nextTree)[0];
     if (next) void selectById(next.id); else { setNote(null); setContent(""); }
+  };
+  const restoreCurrent = async () => {
+    if (!trashedNote) return;
+    setRestoreBusy(true); setRestoreError("");
+    try {
+      const restored = await api.restoreNote(trashedNote.id);
+      await Promise.all([refreshNavigation(), refreshTrash()]);
+      setTrashedNote(null); setNote(restored); setContent(restored.content); resetAutosave(restored);
+      setSelectedFolderId(restored.folder_id ?? "unfiled");
+      setSidebarMode("files"); setDesktopSidebar(true); setRevealTree((value) => value + 1);
+    } catch (error) {
+      setRestoreError(error instanceof Error ? error.message : "ノートを復元できませんでした");
+    } finally { setRestoreBusy(false); }
+  };
+  const purgeTrash = async (days: number) => {
+    const confirmed = window.confirm(`ゴミ箱の${days}日以上経過したノートを完全に削除しますか？\nこの操作は取り消せません。`);
+    if (!confirmed) return;
+    setTrashBusy(true); setTrashMessage("");
+    try {
+      const result = await api.purgeTrash(days);
+      const nextTrash = await refreshTrash();
+      if (trashedNote && !nextTrash.some((item) => item.id === trashedNote.id)) setTrashedNote(null);
+      setTrashMessage(`${result.deleted}件を完全に削除しました`);
+    } catch (error) {
+      setTrashMessage(error instanceof Error ? error.message : "完全削除できませんでした");
+    } finally { setTrashBusy(false); }
+  };
+  const toggleOutline = () => {
+    if (compactOutline) setOutlineOpen((value) => !value);
+    else setOutlineVisible((value) => !value);
   };
   const copyCurrentPath = async () => {
     if (!notePath) return;
@@ -201,15 +285,16 @@ export default function App() {
     if (copyResetTimer.current !== null) window.clearTimeout(copyResetTimer.current);
     copyResetTimer.current = window.setTimeout(() => setPathCopied(false), 1800);
   };
+  const outlineExpanded = compactOutline ? outlineOpen : outlineVisible;
 
   return (
     <div className="app-shell">
       <TopBar onMenu={toggleWorkspace} onSearch={() => setSearchOpen(true)} onCreate={() => setNewOpen(true)} onCreateFolder={() => setNewFolderOpen(true)} sidebarOpen={window.matchMedia("(max-width: 900px)").matches ? mobileSidebar : desktopSidebar} />
       <div className="workspace">
-        <Sidebar tree={tree} recent={recent} selectedId={note?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={setSidebarMode} onSelect={selectSummary} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} />
+        <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
         {mobileSidebar ? <button className="sidebar-scrim" aria-label="サイドバーを閉じる" onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
-          {note ? <>
+          {trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>ゴミ箱</h1><p>左の一覧から削除済みノートを選択してください。</p></div> : note ? <>
             <header className="document-bar">
               <div className="breadcrumb-group">
                 <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id}>{folder.name}<b>/</b></span>) : <span>未整理<b>/</b></span>}<strong>{note.filename}</strong></div>
@@ -224,14 +309,14 @@ export default function App() {
                 <button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")} title="プレビュー"><Eye size={17} /></button>
               </div>
               <button className="icon-button delete-button" onClick={deleteCurrent} aria-label="ノートを削除"><Trash2 size={17} /></button>
-              <button className={`icon-button outline-toggle ${outlineOpen ? "active" : ""}`} onClick={() => setOutlineOpen((value) => !value)} aria-label={outlineOpen ? "目次を閉じる" : "目次を表示"} aria-expanded={outlineOpen} aria-controls="note-outline" title="目次"><ListTree size={18} /></button>
+              <button className={`icon-button outline-toggle ${outlineExpanded ? "active" : ""}`} onClick={toggleOutline} aria-label={outlineExpanded ? "目次を閉じる" : "目次を表示"} aria-expanded={outlineExpanded} aria-controls="note-outline" title="目次"><ListTree size={18} /></button>
             </header>
             <div className="mobile-tabs"><button className={view !== "preview" ? "active" : ""} onClick={() => setView("edit")}>編集</button><button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>プレビュー</button></div>
-            <div className={`document-workarea view-${view}`} id="preview">
+            <div className={`document-workarea view-${view} ${outlineVisible ? "" : "outline-hidden"}`} id="preview">
               {view !== "preview" ? <EditorPane content={content} onChange={setContent} /> : null}
               {view !== "edit" ? <PreviewPane content={content} links={note.links} onWikilink={selectById} /> : null}
               {outlineOpen ? <button className="outline-scrim" aria-label="目次の外側を閉じる" onClick={() => setOutlineOpen(false)} /> : null}
-              <Outline note={{ ...note, content }} drawerOpen={outlineOpen} onClose={() => setOutlineOpen(false)} onBacklink={(id) => void selectById(id)} />
+              <Outline note={{ ...note, content }} drawerOpen={outlineOpen} desktopVisible={outlineVisible} onClose={() => setOutlineOpen(false)} onBacklink={(id) => void selectById(id)} />
             </div>
             <footer className="statusbar">
               <span className="mcp-status"><i />{status?.mcp_ready ? "MCP 接続可能" : "MCP 停止中"}</span>

@@ -1,7 +1,14 @@
-import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Pencil, Search, Settings2, Tag, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Pencil, Search, Settings2, Trash2 } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { folderContainsNote, flattenNotes } from "../folderUtils";
-import type { FolderNode, NoteSummary } from "../types";
+import type { FolderNode, NoteSummary, TrashedNoteSummary } from "../types";
+
+export type SidebarMode = "files" | "recent" | "trash";
+
+const deletedAtFormatter = new Intl.DateTimeFormat("ja-JP", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
 
 type FolderProps = {
   folder: FolderNode;
@@ -55,44 +62,62 @@ const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolder
 type Props = {
   tree: FolderNode[];
   recent: NoteSummary[];
+  trash: TrashedNoteSummary[];
   selectedId: string | null;
+  selectedTrashId: string | null;
   selectedFolderId: string | null;
   revealKey: number;
-  mode: "files" | "recent";
+  mode: SidebarMode;
   mobileOpen: boolean;
   desktopOpen: boolean;
-  onMode: (mode: "files" | "recent") => void;
+  onMode: (mode: SidebarMode) => void;
   onSelect: (note: NoteSummary) => void;
+  onSelectTrash: (note: TrashedNoteSummary) => void;
   onSelectFolder: (folderId: string) => void;
   onSearch: () => void;
   onRenameFolder: (folder: FolderNode) => void;
   onDeleteFolder: (folder: FolderNode) => void;
+  onPurgeTrash: (days: number) => void;
+  trashBusy: boolean;
+  trashMessage: string;
 };
 
-export function Sidebar({ tree, recent, selectedId, selectedFolderId, revealKey, mode, mobileOpen, desktopOpen, onMode, onSelect, onSelectFolder, onSearch, onRenameFolder, onDeleteFolder }: Props) {
+export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, selectedFolderId, revealKey, mode, mobileOpen, desktopOpen, onMode, onSelect, onSelectTrash, onSelectFolder, onSearch, onRenameFolder, onDeleteFolder, onPurgeTrash, trashBusy, trashMessage }: Props) {
+  const [trashDays, setTrashDays] = useState("30");
+  const purgeDays = Number(trashDays);
+  const validPurgeDays = Number.isInteger(purgeDays) && purgeDays >= 0 && purgeDays <= 36500;
   return (
     <aside className={`sidebar-shell ${mobileOpen ? "mobile-open" : ""} ${desktopOpen ? "" : "desktop-collapsed"}`}>
       <nav className="activity-rail" aria-label="ワークスペースのナビゲーション">
         <button className={mode === "files" ? "active" : ""} onClick={() => onMode("files")} aria-label="ファイル"><FileText size={20} /></button>
         <button onClick={onSearch} aria-label="検索"><Search size={20} /></button>
         <button className={mode === "recent" ? "active" : ""} onClick={() => onMode("recent")} aria-label="最近のノート"><Clock3 size={19} /></button>
-        <button aria-label="タグ" disabled><Tag size={19} /></button>
+        <button className={mode === "trash" ? "active" : ""} onClick={() => onMode("trash")} aria-label="ゴミ箱"><Trash2 size={19} /></button>
         <button className="rail-bottom" aria-label="設定" disabled><Settings2 size={19} /></button>
       </nav>
       <div className="sidebar-panel">
         <div className="sidebar-heading">
-          <span>{mode === "files" ? "ワークスペース" : "最近のノート"}</span>
+          <span>{mode === "files" ? "ワークスペース" : mode === "recent" ? "最近のノート" : "ゴミ箱"}</span>
         </div>
+        {mode === "trash" ? <div className="trash-purge-controls">
+          <label><input aria-label="完全削除する経過日数" type="number" min="0" max="36500" step="1" value={trashDays} onChange={(event) => setTrashDays(event.target.value)} /><span>日以上前に削除したノート</span></label>
+          <button disabled={trashBusy || !validPurgeDays} onClick={() => onPurgeTrash(purgeDays)}>{trashBusy ? "削除中…" : "完全削除"}</button>
+          {trashMessage ? <p role="status">{trashMessage}</p> : null}
+        </div> : null}
         <div className="tree-scroll">
           {mode === "files" ? tree.map((folder) => (
             <FolderTree key={folder.id} folder={folder} selectedId={selectedId} selectedFolderId={selectedFolderId} revealKey={revealKey} onSelect={onSelect} onSelectFolder={onSelectFolder} onRename={onRenameFolder} onDelete={onDeleteFolder} />
-          )) : recent.map((note) => (
+          )) : mode === "recent" ? recent.map((note) => (
             <button key={note.id} className={`recent-row ${selectedId === note.id ? "selected" : ""}`} onClick={() => onSelect(note)}>
               <FileText size={16} /><span><strong>{note.title}</strong><small>{note.filename}</small></span>
             </button>
-          ))}
+          )) : trash.length ? trash.map((item) => (
+            <button key={item.id} className={`trash-row ${selectedTrashId === item.id ? "selected" : ""}`} onClick={() => onSelectTrash(item)}>
+              <Trash2 size={16} /><span><strong>{item.filename}</strong><small title={item.deleted_path}>{item.deleted_path}</small><time>{deletedAtFormatter.format(new Date(item.deleted_at * 1000))}</time></span>
+            </button>
+          )) : <div className="trash-empty"><Trash2 size={22} /><span>ゴミ箱は空です</span></div>}
         </div>
-        <div className="sidebar-foot"><span>{flattenNotes(tree).length} ノート</span><span>SQLite</span></div>
+        <div className="sidebar-foot"><span>{mode === "trash" ? `${trash.length} 件` : `${flattenNotes(tree).length} ノート`}</span><span>SQLite</span></div>
       </div>
     </aside>
   );

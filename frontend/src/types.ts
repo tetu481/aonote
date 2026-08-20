@@ -20,6 +20,13 @@ export type Note = NoteSummary & {
   backlinks: Array<Pick<NoteSummary, "id" | "title" | "filename">>;
 };
 
+export type TrashedNoteSummary = NoteSummary & {
+  deleted_at: number;
+  deleted_path: string;
+};
+
+export type TrashedNote = Note & TrashedNoteSummary;
+
 export type FolderNode = {
   id: string;
   name: string;

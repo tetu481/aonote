@@ -108,6 +108,7 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert "Missing parent folders are created automatically" in skill_note_response.json()["content"]
         assert "`update_note`" in skill_note_response.json()["content"]
         assert "`delete_note`" in skill_note_response.json()["content"]
+        assert "browser trash" in skill_note_response.json()["content"]
         mcp_note = next(note for note in folders[0]["notes"] if note["filename"] == "02-MCP連携.md")
         mcp_note_response = await client.get(f"/api/notes/{mcp_note['id']}")
         assert mcp_note_response.status_code == 200
@@ -154,6 +155,114 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
             json={"content": "古い編集", "version": 1},
         )
         assert conflict.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_trash_restore_conflict_missing_folder_and_purge(tmp_path: Path):
+    async with make_client(tmp_path) as client:
+        folder = (
+            await client.post("/api/folders", json={"name": "復元先"})
+        ).json()
+        created = await client.post(
+            "/api/notes",
+            json={
+                "filename": "ゴミ箱テスト.md",
+                "folder_id": folder["id"],
+                "content": "# ゴミ箱テスト\n\n復元する本文",
+            },
+        )
+        note = created.json()
+
+        deleted = await client.delete(f"/api/notes/{note['id']}")
+        assert deleted.status_code == 204
+        assert (await client.get(f"/api/notes/{note['id']}" )).status_code == 404
+        assert all(
+            item["id"] != note["id"]
+            for root in (await client.get("/api/tree")).json()
+            for item in root["notes"]
+        )
+        assert not any(
+            item["id"] == note["id"]
+            for item in (await client.get("/api/search", params={"q": "復元する本文"})).json()["results"]
+        )
+
+        trash = (await client.get("/api/trash")).json()
+        trashed = next(item for item in trash if item["id"] == note["id"])
+        assert trashed["deleted_path"] == "復元先/ゴミ箱テスト.md"
+        detail = (await client.get(f"/api/trash/{note['id']}")).json()
+        assert detail["content"] == note["content"]
+
+        restored = await client.post(f"/api/trash/{note['id']}/restore")
+        assert restored.status_code == 200
+        assert restored.json()["folder_id"] == folder["id"]
+
+        assert (await client.delete(f"/api/notes/{note['id']}")).status_code == 204
+        duplicate = await client.post(
+            "/api/notes",
+            json={
+                "filename": note["filename"],
+                "folder_id": folder["id"],
+                "content": "# 同名ノート",
+            },
+        )
+        assert duplicate.status_code == 201
+        conflict = await client.post(f"/api/trash/{note['id']}/restore")
+        assert conflict.status_code == 409
+        assert "同じ名前" in conflict.json()["detail"]
+        assert (await client.get(f"/api/trash/{note['id']}")).status_code == 200
+
+        assert (await client.delete(f"/api/notes/{duplicate.json()['id']}")).status_code == 204
+        assert (await client.delete(f"/api/folders/{folder['id']}")).status_code == 204
+        restored_unfiled = await client.post(f"/api/trash/{note['id']}/restore")
+        assert restored_unfiled.status_code == 200
+        assert restored_unfiled.json()["folder_id"] is None
+
+        assert (await client.delete(f"/api/notes/{note['id']}")).status_code == 204
+        database = client._transport.app.state.db
+        with database.connect() as connection:
+            connection.execute(
+                "UPDATE notes SET deleted_at = deleted_at - 31 * 86400 WHERE id = ?",
+                (note["id"],),
+            )
+        purged = await client.delete("/api/trash", params={"older_than_days": 30})
+        assert purged.status_code == 200
+        assert purged.json()["deleted"] == 1
+        assert (await client.get(f"/api/trash/{note['id']}")).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_mcp_delete_moves_note_to_browser_only_trash(tmp_path: Path):
+    async with make_client(tmp_path, bypass=False) as client:
+        access_token = await oauth_token(client)
+        headers = {"Authorization": f"Bearer {access_token}"}
+        created = await client.post(
+            "/api/notes",
+            headers=headers,
+            json={"filename": "MCP削除.md", "content": "# MCP削除", "folder_id": None},
+        )
+        assert created.status_code == 201
+        note_id = created.json()["id"]
+        response = await client.post(
+            "/mcp",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "delete_note", "arguments": {"note_id": note_id}},
+            },
+        )
+        result = response.json()["result"]
+        assert result["isError"] is False
+        assert result["structuredContent"] == {"deleted": True, "trashed": True}
+        assert (await client.get(f"/api/notes/{note_id}", headers=headers)).status_code == 404
+        assert (await client.get("/api/trash", headers=headers)).status_code == 403
+
+        assert (
+            await client.post("/api/session", json={"password": "test-password"})
+        ).status_code == 200
+        trash = (await client.get("/api/trash")).json()
+        assert any(item["id"] == note_id for item in trash)
 
 
 @pytest.mark.anyio
@@ -819,6 +928,10 @@ def test_existing_database_is_migrated_without_losing_notes(tmp_path: Path):
     assert note["updated_by"] == "管理者"
     with database.connect() as connection:
         assert "actor_name" in {row["name"] for row in connection.execute("PRAGMA table_info(oauth_tokens)")}
+        note_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(notes)")
+        }
+        assert {"deleted_at", "deleted_folder_id", "deleted_path"} <= note_columns
 
 
 def test_only_seed_notes_receive_brand_case_migration(tmp_path: Path):

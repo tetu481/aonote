@@ -162,7 +162,7 @@ TOOLS = [
     ),
     _tool(
         "delete_note",
-        "Permanently delete a note. Use only after explicit user confirmation.",
+        "Move a note to aonote's browser trash. Use only after explicit user confirmation.",
         {
             "type": "object",
             "properties": {"note_id": {"type": "string"}},
@@ -375,7 +375,7 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
             require_scope(principal, "notes:write")
             if not db.delete_note(str(arguments.get("note_id", ""))):
                 raise ValueError("Note not found")
-            return {"deleted": True}
+            return {"deleted": True, "trashed": True}
         raise ValueError(f"Unknown tool: {name}")
 
     return router

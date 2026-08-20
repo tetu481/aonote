@@ -1,4 +1,4 @@
-import type { AppStatus, FolderNode, Note, NoteSummary, SearchResult } from "./types";
+import type { AppStatus, FolderNode, Note, NoteSummary, SearchResult, TrashedNote, TrashedNoteSummary } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -47,6 +47,11 @@ export const api = {
   relocateNote: (id: string, payload: { filename: string; folder_id: string | null; version: number }) =>
     request<Note>(`/api/notes/${id}/location`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteNote: (id: string) => request<void>(`/api/notes/${id}`, { method: "DELETE" }),
+  trash: () => request<TrashedNoteSummary[]>("/api/trash"),
+  trashedNote: (id: string) => request<TrashedNote>(`/api/trash/${id}`),
+  restoreNote: (id: string) => request<Note>(`/api/trash/${id}/restore`, { method: "POST" }),
+  purgeTrash: (olderThanDays: number) =>
+    request<{ deleted: number }>(`/api/trash?older_than_days=${encodeURIComponent(olderThanDays)}`, { method: "DELETE" }),
   createFolder: (payload: { name: string; parent_id: string | null }) =>
     request<{ id: string; name: string; parent_id: string | null; depth: number }>("/api/folders", { method: "POST", body: JSON.stringify(payload) }),
   renameFolder: (id: string, name: string) =>
