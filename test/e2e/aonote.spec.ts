@@ -26,6 +26,9 @@ test("ワークスペース機能をデスクトップで操作できる", async
   await page.goto("/");
   await expect(page).toHaveTitle("aonote");
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "/assets/favicon.svg");
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", "/assets/apple-touch-icon.png");
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("sizes", "180x180");
+  await expect(page.locator('meta[name="apple-mobile-web-app-title"]')).toHaveAttribute("content", "aonote");
   const favicon = await page.evaluate(async () => {
     const response = await fetch("/assets/favicon.svg");
     return { ok: response.ok, contentType: response.headers.get("content-type"), body: await response.text() };
@@ -33,6 +36,20 @@ test("ワークスペース機能をデスクトップで操作できる", async
   expect(favicon.ok).toBeTruthy();
   expect(favicon.contentType).toContain("image/svg+xml");
   expect(favicon.body.match(/<path /g)).toHaveLength(2);
+  const appleTouchIcon = await page.evaluate(async () => {
+    const response = await fetch("/assets/apple-touch-icon.png");
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      return { ok: response.ok, contentType: response.headers.get("content-type"), width: image.naturalWidth, height: image.naturalHeight };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  });
+  expect(appleTouchIcon).toEqual({ ok: true, contentType: "image/png", width: 180, height: 180 });
   await expect(page.getByLabel("aonote")).toContainText("aonote");
   await expect(page.getByLabel("ユーザー")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "ようこそ", exact: true })).toHaveAttribute("aria-expanded", "true");
