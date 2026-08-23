@@ -10,11 +10,13 @@ import { Outline } from "./components/Outline";
 import { PreviewPane } from "./components/PreviewPane";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { SearchDialog } from "./components/SearchDialog";
+import { SettingsView } from "./components/SettingsView";
 import { Sidebar, type SidebarMode } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { TrashDocument } from "./components/TrashDocument";
 import { useAutosave } from "./hooks/useAutosave";
 import { flattenNotes, folderContainsFolder } from "./folderUtils";
+import { applyTheme, persistTheme, readStoredTheme, type Theme } from "./theme";
 import type { AppStatus, FolderNode, Note, NoteSummary, SaveState, TrashedNote, TrashedNoteSummary } from "./types";
 import "./styles.css";
 
@@ -45,6 +47,7 @@ export default function App() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [view, setView] = useState<ViewMode>("preview");
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("files");
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [desktopSidebar, setDesktopSidebar] = useState(true);
@@ -110,6 +113,10 @@ export default function App() {
 
   useEffect(() => { void loadApp(); }, [loadApp]);
   useEffect(() => {
+    applyTheme(theme);
+    persistTheme(theme);
+  }, [theme]);
+  useEffect(() => {
     try { window.localStorage.setItem(OUTLINE_STORAGE_KEY, String(outlineVisible)); }
     catch { /* localStorageが無効でも表示は継続する */ }
   }, [outlineVisible]);
@@ -168,6 +175,10 @@ export default function App() {
     if (mode !== "trash") {
       setTrashedNote(null);
       setRestoreError("");
+    }
+    if (mode === "settings") {
+      setMobileSidebar(false);
+      setOutlineOpen(false);
     }
   };
   const createNote = async (filename: string, folderId: string | null) => {
@@ -294,7 +305,7 @@ export default function App() {
         <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
         {mobileSidebar ? <button className="sidebar-scrim" aria-label="サイドバーを閉じる" onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
-          {trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>ゴミ箱</h1><p>左の一覧から削除済みノートを選択してください。</p></div> : note ? <>
+          {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} onClose={() => setSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>ゴミ箱</h1><p>左の一覧から削除済みノートを選択してください。</p></div> : note ? <>
             <header className="document-bar">
               <div className="breadcrumb-group">
                 <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id}>{folder.name}<b>/</b></span>) : <span>未整理<b>/</b></span>}<strong>{note.filename}</strong></div>

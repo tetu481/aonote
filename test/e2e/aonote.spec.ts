@@ -215,6 +215,48 @@ test("ワークスペース機能をデスクトップで操作できる", async
   expect(browserIssues).toEqual([]);
 });
 
+test("設定画面でライトとダークテーマを切り替えて保存できる", async ({ page }) => {
+  const browserIssues: string[] = [];
+  page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });
+  page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.message}`));
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page).toHaveTitle("aonote");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.getByRole("button", { name: "設定", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "外観", exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /ライト/ })).toHaveAttribute("aria-checked", "true");
+
+  await page.getByRole("radio", { name: /ダーク/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#071321");
+  await expect(page.getByRole("radio", { name: /ダーク/ })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:theme:v1"))).toBe("dark");
+  await page.locator(".theme-option").first().evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+  await page.screenshot({ path: `${screenshotDir}/aonote-settings-dark-desktop.png`, fullPage: false });
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByLabel("Markdownプレビュー")).toBeVisible();
+  await expect.poll(() => page.getByLabel("Markdownプレビュー").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(15, 32, 50)");
+  await page.screenshot({ path: `${screenshotDir}/aonote-note-dark-desktop.png`, fullPage: false });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "ワークスペースを表示" }).click();
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "外観", exact: true })).toBeVisible();
+  await expect(page.locator(".sidebar-shell")).not.toHaveClass(/mobile-open/);
+  await expect.poll(async () => (await page.locator(".sidebar-shell").boundingBox())?.x ?? 0).toBeLessThan(-300);
+  await page.screenshot({ path: `${screenshotDir}/aonote-settings-dark-mobile.png`, fullPage: false });
+
+  await page.getByRole("radio", { name: /ライト/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#eef7ff");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:theme:v1"))).toBe("light");
+  expect(browserIssues).toEqual([]);
+});
+
 test("ワークスペースを名前順で表示する", async ({ page, request }) => {
   const browserIssues: string[] = [];
   page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });
