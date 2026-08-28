@@ -1,6 +1,6 @@
 # <img src="assets/aonote-title.svg" alt="aonote" height="42">
 
-[English](README.en.md) | 日本語
+日本語 | [English](README.en.md)
 
 aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWebワークスペースです。Python、React、SQLiteで動作し、検索はSQLite FTS5で行います。
 

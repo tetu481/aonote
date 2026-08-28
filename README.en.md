@@ -1,6 +1,6 @@
 # <img src="assets/aonote-title.svg" alt="aonote" height="42">
 
-English | [日本語](README.md)
+[日本語](README.md) | English
 
 aonote is a lightweight web workspace where you and AI can work with the same Markdown notes. It runs on Python, React, and SQLite, with full-text search powered by SQLite FTS5.
 
