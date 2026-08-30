@@ -25,6 +25,6 @@ export function persistTheme(theme: Theme) {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
-    // localStorageが無効でも、そのセッション中のテーマは継続する。
+    // Keep the theme for the current session when localStorage is unavailable.
   }
 }

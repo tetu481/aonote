@@ -1,11 +1,12 @@
 import type { AppStatus, FolderNode, Note, NoteSummary, SearchResult, TrashedNote, TrashedNoteSummary } from "./types";
+import { uiText } from "./locales";
 
 export class ApiError extends Error {
   status: number;
   body: unknown;
 
   constructor(status: number, body: unknown) {
-    super(typeof body === "object" && body && "detail" in body ? String((body as { detail: unknown }).detail) : `API error ${status}`);
+    super(typeof body === "object" && body && "detail" in body ? String((body as { detail: unknown }).detail) : uiText.api.error(status));
     this.status = status;
     this.body = body;
   }

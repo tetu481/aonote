@@ -1,4 +1,5 @@
 import { FolderPlus, Menu, Plus, Search } from "lucide-react";
+import { uiText } from "../locales";
 import { Brand } from "./Brand";
 
 type Props = {
@@ -12,16 +13,16 @@ type Props = {
 export function TopBar({ onMenu, onSearch, onCreate, onCreateFolder, sidebarOpen }: Props) {
   return (
     <header className="topbar">
-      <button className="icon-button menu-button" onClick={onMenu} aria-label={sidebarOpen ? "ワークスペースを隠す" : "ワークスペースを表示"} aria-pressed={sidebarOpen}><Menu size={20} /></button>
+      <button className="icon-button menu-button" onClick={onMenu} aria-label={sidebarOpen ? uiText.topBar.hideWorkspace : uiText.topBar.showWorkspace} aria-pressed={sidebarOpen}><Menu size={20} /></button>
       <Brand />
-      <button className="command-search" onClick={onSearch} aria-label="ノートを検索">
+      <button className="command-search" onClick={onSearch} aria-label={uiText.topBar.searchLabel}>
         <Search size={17} />
-        <span>ノートを検索…</span>
-        <kbd>⌘ K</kbd>
+        <span>{uiText.topBar.searchPlaceholder}</span>
+        <kbd>{uiText.topBar.searchShortcut}</kbd>
       </button>
       <div className="topbar-actions">
-        <button className="secondary-button" onClick={onCreateFolder}><FolderPlus size={17} /><span>新規フォルダ</span></button>
-        <button className="primary-button" onClick={onCreate}><Plus size={17} /><span>新規ノート</span></button>
+        <button className="secondary-button" onClick={onCreateFolder}><FolderPlus size={17} /><span>{uiText.topBar.newFolder}</span></button>
+        <button className="primary-button" onClick={onCreate}><Plus size={17} /><span>{uiText.topBar.newNote}</span></button>
       </div>
     </header>
   );

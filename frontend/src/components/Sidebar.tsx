@@ -1,11 +1,13 @@
 import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Palette, Pencil, Search, Settings2, Trash2 } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { folderContainsNote, flattenNotes } from "../folderUtils";
+import { uiText } from "../locales";
 import type { FolderNode, NoteSummary, TrashedNoteSummary } from "../types";
+import { DEFAULT_WELCOME_FOLDER_NAME } from "../workspaceDefaults";
 
 export type SidebarMode = "files" | "recent" | "trash" | "settings";
 
-const deletedAtFormatter = new Intl.DateTimeFormat("ja-JP", {
+const deletedAtFormatter = new Intl.DateTimeFormat(uiText.meta.locale, {
   dateStyle: "short",
   timeStyle: "short",
 });
@@ -22,7 +24,7 @@ type FolderProps = {
 };
 
 const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolderId, onSelect, onSelectFolder, onRename, onDelete, revealKey }: FolderProps) {
-  const [open, setOpen] = useState(folder.name === "ようこそ");
+  const [open, setOpen] = useState(folder.name === DEFAULT_WELCOME_FOLDER_NAME);
   const containsSelection = folderContainsNote(folder, selectedId);
   useEffect(() => {
     if (containsSelection) setOpen(true);
@@ -36,8 +38,8 @@ const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolder
           <span>{folder.name}</span>
         </button>
         {folder.id !== "unfiled" ? <div className="folder-actions">
-          <button onClick={() => onRename(folder)} aria-label={`「${folder.name}」の名前を変更`} title="名前を変更"><Pencil size={13} /></button>
-          <button className="folder-delete" onClick={() => onDelete(folder)} aria-label={`「${folder.name}」を削除`} title="削除"><Trash2 size={13} /></button>
+          <button onClick={() => onRename(folder)} aria-label={uiText.sidebar.renameFolder(folder.name)} title={uiText.sidebar.rename}><Pencil size={13} /></button>
+          <button className="folder-delete" onClick={() => onDelete(folder)} aria-label={uiText.sidebar.deleteFolder(folder.name)} title={uiText.sidebar.delete}><Trash2 size={13} /></button>
         </div> : null}
       </div>
       {open ? (
@@ -88,20 +90,20 @@ export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, sele
   const validPurgeDays = Number.isInteger(purgeDays) && purgeDays >= 0 && purgeDays <= 36500;
   return (
     <aside className={`sidebar-shell ${mobileOpen ? "mobile-open" : ""} ${desktopOpen ? "" : "desktop-collapsed"}`}>
-      <nav className="activity-rail" aria-label="ワークスペースのナビゲーション">
-        <button className={mode === "files" ? "active" : ""} onClick={() => onMode("files")} aria-label="ファイル"><FileText size={20} /></button>
-        <button onClick={onSearch} aria-label="検索"><Search size={20} /></button>
-        <button className={mode === "recent" ? "active" : ""} onClick={() => onMode("recent")} aria-label="最近のノート"><Clock3 size={19} /></button>
-        <button className={mode === "trash" ? "active" : ""} onClick={() => onMode("trash")} aria-label="ゴミ箱"><Trash2 size={19} /></button>
-        <button className={`rail-bottom ${mode === "settings" ? "active" : ""}`} onClick={() => onMode("settings")} aria-label="設定"><Settings2 size={19} /></button>
+      <nav className="activity-rail" aria-label={uiText.sidebar.navigationLabel}>
+        <button className={mode === "files" ? "active" : ""} onClick={() => onMode("files")} aria-label={uiText.sidebar.files}><FileText size={20} /></button>
+        <button onClick={onSearch} aria-label={uiText.sidebar.search}><Search size={20} /></button>
+        <button className={mode === "recent" ? "active" : ""} onClick={() => onMode("recent")} aria-label={uiText.sidebar.recent}><Clock3 size={19} /></button>
+        <button className={mode === "trash" ? "active" : ""} onClick={() => onMode("trash")} aria-label={uiText.sidebar.trash}><Trash2 size={19} /></button>
+        <button className={`rail-bottom ${mode === "settings" ? "active" : ""}`} onClick={() => onMode("settings")} aria-label={uiText.sidebar.settings}><Settings2 size={19} /></button>
       </nav>
       <div className="sidebar-panel">
         <div className="sidebar-heading">
-          <span>{mode === "files" ? "ワークスペース" : mode === "recent" ? "最近のノート" : mode === "trash" ? "ゴミ箱" : "設定"}</span>
+          <span>{uiText.sidebar.headings[mode]}</span>
         </div>
         {mode === "trash" ? <div className="trash-purge-controls">
-          <label><input aria-label="完全削除する経過日数" type="number" min="0" max="36500" step="1" value={trashDays} onChange={(event) => setTrashDays(event.target.value)} /><span>日以上前に削除したノート</span></label>
-          <button disabled={trashBusy || !validPurgeDays} onClick={() => onPurgeTrash(purgeDays)}>{trashBusy ? "削除中…" : "完全削除"}</button>
+          <label><input aria-label={uiText.sidebar.purgeDaysLabel} type="number" min="0" max="36500" step="1" value={trashDays} onChange={(event) => setTrashDays(event.target.value)} /><span>{uiText.sidebar.purgeDescription}</span></label>
+          <button disabled={trashBusy || !validPurgeDays} onClick={() => onPurgeTrash(purgeDays)}>{trashBusy ? uiText.sidebar.purging : uiText.sidebar.purge}</button>
           {trashMessage ? <p role="status">{trashMessage}</p> : null}
         </div> : null}
         <div className="tree-scroll">
@@ -115,9 +117,9 @@ export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, sele
             <button key={item.id} className={`trash-row ${selectedTrashId === item.id ? "selected" : ""}`} onClick={() => onSelectTrash(item)}>
               <Trash2 size={16} /><span><strong>{item.filename}</strong><small title={item.deleted_path}>{item.deleted_path}</small><time>{deletedAtFormatter.format(new Date(item.deleted_at * 1000))}</time></span>
             </button>
-          )) : mode === "trash" ? <div className="trash-empty"><Trash2 size={22} /><span>ゴミ箱は空です</span></div> : <button className="settings-nav-row selected" onClick={() => onMode("settings")}><Palette size={17} /><span><strong>外観</strong><small>ライト・ダークテーマ</small></span></button>}
+          )) : mode === "trash" ? <div className="trash-empty"><Trash2 size={22} /><span>{uiText.sidebar.emptyTrash}</span></div> : <button className="settings-nav-row selected" onClick={() => onMode("settings")}><Palette size={17} /><span><strong>{uiText.sidebar.appearance}</strong><small>{uiText.sidebar.appearanceDescription}</small></span></button>}
         </div>
-        <div className="sidebar-foot"><span>{mode === "trash" ? `${trash.length} 件` : mode === "settings" ? "環境設定" : `${flattenNotes(tree).length} ノート`}</span><span>{mode === "settings" ? "aonote" : "SQLite"}</span></div>
+        <div className="sidebar-foot"><span>{mode === "trash" ? uiText.sidebar.trashCount(trash.length) : mode === "settings" ? uiText.sidebar.preferences : uiText.sidebar.noteCount(flattenNotes(tree).length)}</span><span>{mode === "settings" ? "aonote" : uiText.sidebar.database}</span></div>
       </div>
     </aside>
   );

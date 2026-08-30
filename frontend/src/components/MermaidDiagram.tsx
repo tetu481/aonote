@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { uiText } from "../locales";
 
 type MermaidApi = (typeof import("mermaid"))["default"];
 
@@ -47,13 +48,13 @@ export function MermaidDiagram({ chart }: { chart: string }) {
         const rendered = await mermaid.render(renderId, chart);
         if (!cancelled) setSvg(rendered.svg);
       } catch {
-        if (!cancelled) setError("Mermaidの構文を確認してください。");
+        if (!cancelled) setError(uiText.mermaid.syntaxError);
       }
     })();
     return () => { cancelled = true; };
   }, [chart, diagramId]);
 
   if (error) return <div className="mermaid-error" role="alert">{error}</div>;
-  if (!svg) return <div className="mermaid-loading" role="status">図を描画しています…</div>;
-  return <div className="mermaid-diagram" role="img" aria-label="Mermaid図" dangerouslySetInnerHTML={{ __html: svg }} />;
+  if (!svg) return <div className="mermaid-loading" role="status">{uiText.mermaid.loading}</div>;
+  return <div className="mermaid-diagram" role="img" aria-label={uiText.mermaid.diagramLabel} dangerouslySetInnerHTML={{ __html: svg }} />;
 }

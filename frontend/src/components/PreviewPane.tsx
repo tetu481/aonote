@@ -2,6 +2,7 @@ import { Children, isValidElement, useCallback, useDeferredValue, useMemo, type 
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CircleAlert, Info, Lightbulb, ShieldAlert, TriangleAlert } from "lucide-react";
+import { uiText } from "../locales";
 import { remarkAlerts } from "../remarkAlerts";
 import { remarkHeadingIds } from "../remarkHeadingIds";
 import type { Note } from "../types";
@@ -10,11 +11,11 @@ import { MermaidDiagram } from "./MermaidDiagram";
 type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
 
 const alertTypes = {
-  note: { label: "Note", Icon: Info },
-  tip: { label: "Tip", Icon: Lightbulb },
-  important: { label: "Important", Icon: CircleAlert },
-  warning: { label: "Warning", Icon: TriangleAlert },
-  caution: { label: "Caution", Icon: ShieldAlert },
+  note: { label: uiText.preview.alerts.note, Icon: Info },
+  tip: { label: uiText.preview.alerts.tip, Icon: Lightbulb },
+  important: { label: uiText.preview.alerts.important, Icon: CircleAlert },
+  warning: { label: uiText.preview.alerts.warning, Icon: TriangleAlert },
+  caution: { label: uiText.preview.alerts.caution, Icon: ShieldAlert },
 } satisfies Record<AlertKind, { label: string; Icon: typeof Info }>;
 
 function MarkdownBlockquote({ node: _node, children, className, ...props }: ComponentPropsWithoutRef<"blockquote"> & ExtraProps) {
@@ -78,7 +79,7 @@ export function PreviewPane({ content, links, onWikilink }: Props) {
     if (noteId) onWikilink(noteId);
   }, [linkTargets, onWikilink]);
   return (
-    <article className="preview-pane markdown-body" aria-label="Markdownプレビュー" onClick={followWikilink}>
+    <article className="preview-pane markdown-body" aria-label={uiText.preview.regionLabel} onClick={followWikilink}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkAlerts, remarkHeadingIds]}
         components={markdownComponents}

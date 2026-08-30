@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flattenFolders } from "../folderUtils";
+import { uiText } from "../locales";
 import type { FolderNode } from "../types";
 
 type Props = {
@@ -37,14 +38,14 @@ export function NewFolderDialog({ open, folders, maxDepth, defaultParentId, onCl
     <form className="new-note-dialog" onMouseDown={(event) => event.stopPropagation()} onSubmit={async (event) => {
       event.preventDefault(); setBusy(true); setError("");
       try { await onCreate(name, parentId); onClose(); }
-      catch (reason) { setError(reason instanceof Error ? reason.message : "フォルダを作成できませんでした"); }
+      catch (reason) { setError(reason instanceof Error ? reason.message : uiText.dialogs.newFolder.error); }
       finally { setBusy(false); }
     }}>
-      <h2>新しいフォルダ</h2><p>最大{maxDepth}階層まで作成できます。</p>
-      <label>フォルダ名<input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder="新しいフォルダ" required /></label>
-      <label>作成先<select value={parentId ?? ""} onChange={(event) => setParentId(event.target.value || null)}><option value="">ワークスペース直下</option>{parents.map((folder) => <option key={folder.id} value={folder.id}>{folder.label}</option>)}</select></label>
+      <h2>{uiText.dialogs.newFolder.title}</h2><p>{uiText.dialogs.newFolder.description(maxDepth)}</p>
+      <label>{uiText.dialogs.newFolder.name}<input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder={uiText.dialogs.newFolder.namePlaceholder} required /></label>
+      <label>{uiText.dialogs.newFolder.destination}<select value={parentId ?? ""} onChange={(event) => setParentId(event.target.value || null)}><option value="">{uiText.dialogs.newFolder.workspaceRoot}</option>{parents.map((folder) => <option key={folder.id} value={folder.id}>{folder.label}</option>)}</select></label>
       {error ? <div className="dialog-error">{error}</div> : null}
-      <div className="dialog-actions"><button type="button" onClick={onClose}>キャンセル</button><button className="primary-button" disabled={busy || !name.trim()}>{busy ? "作成中…" : "作成"}</button></div>
+      <div className="dialog-actions"><button type="button" onClick={onClose}>{uiText.common.cancel}</button><button className="primary-button" disabled={busy || !name.trim()}>{busy ? uiText.common.creating : uiText.common.create}</button></div>
     </form>
   </div>;
 }

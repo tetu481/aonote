@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { uiText } from "../locales";
 
 type Props = { content: string; onChange: (content: string) => void };
 
@@ -12,7 +13,7 @@ export function EditorPane({ content, onChange }: Props) {
   };
 
   return (
-    <section className="editor-pane" aria-label="Markdownエディタ">
+    <section className="editor-pane" aria-label={uiText.editor.regionLabel}>
       <div className="line-numbers" ref={lineRef} aria-hidden="true">
         {lines.map((_, index) => <span key={index} className={cursorLine === index + 1 ? "current" : ""}>{index + 1}</span>)}
       </div>
@@ -23,7 +24,7 @@ export function EditorPane({ content, onChange }: Props) {
         onKeyUp={(event) => updateCursor(event.currentTarget)}
         onScroll={(event) => { if (lineRef.current) lineRef.current.scrollTop = event.currentTarget.scrollTop; }}
         spellCheck={false}
-        aria-label="Markdown本文"
+        aria-label={uiText.editor.contentLabel}
       />
     </section>
   );

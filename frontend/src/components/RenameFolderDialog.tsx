@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { uiText } from "../locales";
 import type { FolderNode } from "../types";
 
 type Props = {
@@ -28,13 +29,13 @@ export function RenameFolderDialog({ folder, onClose, onSave }: Props) {
     <form className="new-note-dialog" onMouseDown={(event) => event.stopPropagation()} onSubmit={async (event) => {
       event.preventDefault(); setBusy(true); setError("");
       try { await onSave(name); onClose(); }
-      catch (reason) { setError(reason instanceof Error ? reason.message : "フォルダ名を変更できませんでした"); }
+      catch (reason) { setError(reason instanceof Error ? reason.message : uiText.dialogs.renameFolder.error); }
       finally { setBusy(false); }
     }}>
-      <h2>フォルダ名を変更</h2><p>配下のフォルダとノートはそのまま維持されます。</p>
-      <label>フォルダ名<input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} required /></label>
+      <h2>{uiText.dialogs.renameFolder.title}</h2><p>{uiText.dialogs.renameFolder.description}</p>
+      <label>{uiText.dialogs.renameFolder.name}<input ref={inputRef} value={name} onChange={(event) => setName(event.target.value)} required /></label>
       {error ? <div className="dialog-error">{error}</div> : null}
-      <div className="dialog-actions"><button type="button" onClick={onClose}>キャンセル</button><button className="primary-button" disabled={busy || !name.trim()}>{busy ? "変更中…" : "変更を保存"}</button></div>
+      <div className="dialog-actions"><button type="button" onClick={onClose}>{uiText.common.cancel}</button><button className="primary-button" disabled={busy || !name.trim()}>{busy ? uiText.common.changing : uiText.common.saveChanges}</button></div>
     </form>
   </div>;
 }

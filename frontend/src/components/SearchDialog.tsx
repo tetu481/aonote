@@ -1,6 +1,7 @@
 import { FileText, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { uiText } from "../locales";
 import type { SearchResult } from "../types";
 
 export function SearchDialog({ open, onClose, onSelect }: { open: boolean; onClose: () => void; onSelect: (id: string) => void }) {
@@ -25,16 +26,16 @@ export function SearchDialog({ open, onClose, onSelect }: { open: boolean; onClo
   if (!open) return null;
   return (
     <div className="dialog-backdrop" onMouseDown={onClose} role="presentation">
-      <section className="search-dialog" role="dialog" aria-modal="true" aria-label="ノートを検索" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="search-input"><Search size={20} /><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="タイトルと本文を検索…" /><button onClick={onClose} aria-label="閉じる"><X size={18} /></button></div>
+      <section className="search-dialog" role="dialog" aria-modal="true" aria-label={uiText.search.dialogLabel} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="search-input"><Search size={20} /><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={uiText.search.placeholder} /><button onClick={onClose} aria-label={uiText.search.close}><X size={18} /></button></div>
         <div className="search-results">
-          {query && results.length === 0 ? <p className="empty-search">一致するノートはありません</p> : null}
+          {query && results.length === 0 ? <p className="empty-search">{uiText.search.noResults}</p> : null}
           {results.map((item) => (
             <button key={item.id} onClick={() => { onSelect(item.id); onClose(); }}>
-              <FileText size={18} /><span><strong>{item.title}</strong><small dangerouslySetInnerHTML={{ __html: item.snippet }} /></span><kbd>↵</kbd>
+              <FileText size={18} /><span><strong>{item.title}</strong><small dangerouslySetInnerHTML={{ __html: item.snippet }} /></span><kbd>{uiText.search.openResultKey}</kbd>
             </button>
           ))}
-          {!query ? <div className="search-hint"><span>SQLite FTS5でノート全体を検索します</span><kbd>esc</kbd><span>で閉じる</span></div> : null}
+          {!query ? <div className="search-hint"><span>{uiText.search.hint}</span><kbd>{uiText.search.escapeKey}</kbd><span>{uiText.search.closeSuffix}</span></div> : null}
         </div>
       </section>
     </div>

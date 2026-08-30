@@ -16,8 +16,10 @@ import { TopBar } from "./components/TopBar";
 import { TrashDocument } from "./components/TrashDocument";
 import { useAutosave } from "./hooks/useAutosave";
 import { flattenNotes, folderContainsFolder } from "./folderUtils";
+import { uiText } from "./locales";
 import { applyTheme, persistTheme, readStoredTheme, type Theme } from "./theme";
 import type { AppStatus, FolderNode, Note, NoteSummary, SaveState, TrashedNote, TrashedNoteSummary } from "./types";
+import { DEFAULT_WELCOME_FOLDER_NAME, DEFAULT_WELCOME_NOTE_FILENAME } from "./workspaceDefaults";
 import "./styles.css";
 
 type ViewMode = "edit" | "split" | "preview";
@@ -29,12 +31,7 @@ function initialOutlineVisible() {
 }
 
 const saveLabels: Record<SaveState, string> = {
-  idle: "",
-  dirty: "未保存",
-  saving: "保存中…",
-  saved: "保存済み",
-  conflict: "更新の競合",
-  error: "保存エラー",
+  ...uiText.app.saveState,
 };
 
 export default function App() {
@@ -69,6 +66,14 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const copyResetTimer = useRef<number | null>(null);
+  const sidebarModeRef = useRef<SidebarMode>("files");
+  const navigationRevisionRef = useRef(0);
+
+  const updateSidebarMode = useCallback((mode: SidebarMode) => {
+    sidebarModeRef.current = mode;
+    navigationRevisionRef.current += 1;
+    setSidebarMode(mode);
+  }, []);
 
   const refreshNavigation = useCallback(async () => {
     const [nextTree, nextRecent] = await Promise.all([api.tree(), api.recent()]);
@@ -84,18 +89,20 @@ export default function App() {
   }, []);
 
   const selectById = useCallback(async (id: string) => {
+    updateSidebarMode("files");
+    setDesktopSidebar(true);
+    setMobileSidebar(false);
+    setOutlineOpen(false);
+    const navigationRevision = ++navigationRevisionRef.current;
     const selected = await api.note(id);
+    if (navigationRevision !== navigationRevisionRef.current) return;
     setNote(selected);
     setTrashedNote(null);
     setRestoreError("");
     setContent(selected.content);
     setSelectedFolderId(selected.folder_id ?? "unfiled");
-    setSidebarMode("files");
-    setDesktopSidebar(true);
     setRevealTree((value) => value + 1);
-    setMobileSidebar(false);
-    setOutlineOpen(false);
-  }, []);
+  }, [updateSidebarMode]);
 
   const loadApp = useCallback(async () => {
     setLoading(true);
@@ -103,9 +110,9 @@ export default function App() {
       const [nextStatus, nextTree, nextRecent, nextTrash] = await Promise.all([api.status(), api.tree(), api.recent(), api.trash()]);
       setStatus(nextStatus); setTree(nextTree); setRecent(nextRecent); setTrash(nextTrash); setAuthRequired(false);
       const notes = flattenNotes(nextTree);
-      const preferred = notes.find((item) => item.filename === "01-ようこそ.md") ?? notes[0];
+      const preferred = notes.find((item) => item.filename === DEFAULT_WELCOME_NOTE_FILENAME) ?? notes[0];
       if (preferred) await selectById(preferred.id);
-      else setSelectedFolderId(nextTree.find((folder) => folder.name === "ようこそ")?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
+      else setSelectedFolderId(nextTree.find((folder) => folder.name === DEFAULT_WELCOME_FOLDER_NAME)?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) setAuthRequired(true);
     } finally { setLoading(false); }
@@ -118,7 +125,7 @@ export default function App() {
   }, [theme]);
   useEffect(() => {
     try { window.localStorage.setItem(OUTLINE_STORAGE_KEY, String(outlineVisible)); }
-    catch { /* localStorageが無効でも表示は継続する */ }
+    catch { /* Continue rendering when localStorage is unavailable. */ }
   }, [outlineVisible]);
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1180px)");
@@ -154,24 +161,27 @@ export default function App() {
   }, [notePath]);
 
   if (authRequired) return <LoginView onLogin={loadApp} />;
-  if (loading) return <div className="loading-screen"><span className="loading-mark" />aonoteを開いています</div>;
+  if (loading) return <div className="loading-screen"><span className="loading-mark" />{uiText.app.loading}</div>;
 
   const selectSummary = (summary: NoteSummary) => { void selectById(summary.id); };
   const selectTrashedSummary = async (summary: TrashedNoteSummary) => {
+    updateSidebarMode("trash");
+    const navigationRevision = ++navigationRevisionRef.current;
     try {
       const selected = await api.trashedNote(summary.id);
+      if (navigationRevision !== navigationRevisionRef.current) return;
       setTrashedNote(selected);
       setRestoreError("");
       setView("preview");
-      setSidebarMode("trash");
       setMobileSidebar(false);
       setOutlineOpen(false);
     } catch (error) {
-      setTrashMessage(error instanceof Error ? error.message : "ゴミ箱のノートを開けませんでした");
+      if (navigationRevision !== navigationRevisionRef.current) return;
+      setTrashMessage(error instanceof Error ? error.message : uiText.app.errors.openTrash);
     }
   };
   const changeSidebarMode = (mode: SidebarMode) => {
-    setSidebarMode(mode);
+    updateSidebarMode(mode);
     if (mode !== "trash") {
       setTrashedNote(null);
       setRestoreError("");
@@ -187,13 +197,13 @@ export default function App() {
     await refreshNavigation();
     setTrashedNote(null); setNote(created); setContent(created.content);
     setSelectedFolderId(created.folder_id ?? "unfiled");
-    setSidebarMode("files"); setDesktopSidebar(true);
+    updateSidebarMode("files"); setDesktopSidebar(true);
   };
   const createFolder = async (name: string, parentId: string | null) => {
     await api.createFolder({ name, parent_id: parentId });
     await refreshNavigation();
     setTrashedNote(null);
-    setSidebarMode("files"); setDesktopSidebar(true);
+    updateSidebarMode("files"); setDesktopSidebar(true);
   };
   const renameSelectedFolder = async (name: string) => {
     if (!folderToRename) return;
@@ -208,7 +218,7 @@ export default function App() {
   const deleteSelectedFolder = async (folder: FolderNode) => {
     const noteCount = flattenNotes([folder]).length;
     const removesSelectedFolder = folderContainsFolder(folder, selectedFolderId);
-    const message = `「${folder.name}」と配下のフォルダを削除しますか？\n配下のノート${noteCount}件は削除せず「未整理」へ移動します。`;
+    const message = uiText.app.deleteFolderConfirmation(folder.name, noteCount);
     if (!window.confirm(message)) return;
     await api.deleteFolder(folder.id);
     const [, selected] = await Promise.all([
@@ -225,7 +235,7 @@ export default function App() {
     setNote(updated); setContent(updated.content); resetAutosave(updated);
     setSelectedFolderId(updated.folder_id ?? "unfiled");
     await refreshNavigation();
-    setSidebarMode("files"); setDesktopSidebar(true);
+    updateSidebarMode("files"); setDesktopSidebar(true);
   };
   const reloadWorkspace = async () => {
     setReloadBusy(true);
@@ -242,11 +252,12 @@ export default function App() {
     else setDesktopSidebar((value) => !value);
   };
   const deleteCurrent = async () => {
-    if (!note || !window.confirm(`「${note.title}」を削除しますか？`)) return;
+    if (!note || !window.confirm(uiText.app.deleteNoteConfirmation(note.title))) return;
     await api.deleteNote(note.id);
     const [nextTree] = await Promise.all([refreshNavigation(), refreshTrash()]);
     const next = flattenNotes(nextTree)[0];
-    if (next) void selectById(next.id); else { setNote(null); setContent(""); }
+    if (next && sidebarModeRef.current === "files") void selectById(next.id);
+    else if (!next) { setNote(null); setContent(""); }
   };
   const restoreCurrent = async () => {
     if (!trashedNote) return;
@@ -256,22 +267,22 @@ export default function App() {
       await Promise.all([refreshNavigation(), refreshTrash()]);
       setTrashedNote(null); setNote(restored); setContent(restored.content); resetAutosave(restored);
       setSelectedFolderId(restored.folder_id ?? "unfiled");
-      setSidebarMode("files"); setDesktopSidebar(true); setRevealTree((value) => value + 1);
+      updateSidebarMode("files"); setDesktopSidebar(true); setRevealTree((value) => value + 1);
     } catch (error) {
-      setRestoreError(error instanceof Error ? error.message : "ノートを復元できませんでした");
+      setRestoreError(error instanceof Error ? error.message : uiText.app.errors.restoreNote);
     } finally { setRestoreBusy(false); }
   };
   const purgeTrash = async (days: number) => {
-    const confirmed = window.confirm(`ゴミ箱の${days}日以上経過したノートを完全に削除しますか？\nこの操作は取り消せません。`);
+    const confirmed = window.confirm(uiText.app.purgeTrashConfirmation(days));
     if (!confirmed) return;
     setTrashBusy(true); setTrashMessage("");
     try {
       const result = await api.purgeTrash(days);
       const nextTrash = await refreshTrash();
       if (trashedNote && !nextTrash.some((item) => item.id === trashedNote.id)) setTrashedNote(null);
-      setTrashMessage(`${result.deleted}件を完全に削除しました`);
+      setTrashMessage(uiText.app.trashPurged(result.deleted));
     } catch (error) {
-      setTrashMessage(error instanceof Error ? error.message : "完全削除できませんでした");
+      setTrashMessage(error instanceof Error ? error.message : uiText.app.errors.purgeTrash);
     } finally { setTrashBusy(false); }
   };
   const toggleOutline = () => {
@@ -303,38 +314,38 @@ export default function App() {
       <TopBar onMenu={toggleWorkspace} onSearch={() => setSearchOpen(true)} onCreate={() => setNewOpen(true)} onCreateFolder={() => setNewFolderOpen(true)} sidebarOpen={window.matchMedia("(max-width: 900px)").matches ? mobileSidebar : desktopSidebar} />
       <div className="workspace">
         <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
-        {mobileSidebar ? <button className="sidebar-scrim" aria-label="サイドバーを閉じる" onClick={() => setMobileSidebar(false)} /> : null}
+        {mobileSidebar ? <button className="sidebar-scrim" aria-label={uiText.app.sidebarClose} onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
-          {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} onClose={() => setSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>ゴミ箱</h1><p>左の一覧から削除済みノートを選択してください。</p></div> : note ? <>
+          {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
             <header className="document-bar">
               <div className="breadcrumb-group">
-                <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id}>{folder.name}<b>/</b></span>) : <span>未整理<b>/</b></span>}<strong>{note.filename}</strong></div>
-                <button className={`icon-button copy-path-button ${pathCopied ? "copied" : ""}`} onClick={() => void copyCurrentPath()} aria-label={pathCopied ? "パスをコピーしました" : "パスをコピー"} title={pathCopied ? "コピーしました" : notePath}>{pathCopied ? <Check size={16} /> : <Copy size={16} />}</button>
+                <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id}>{folder.name}<b>/</b></span>) : <span>{uiText.common.unfiled}<b>/</b></span>}<strong>{note.filename}</strong></div>
+                <button className={`icon-button copy-path-button ${pathCopied ? "copied" : ""}`} onClick={() => void copyCurrentPath()} aria-label={pathCopied ? uiText.app.toolbar.copiedPath : uiText.app.toolbar.copyPath} title={pathCopied ? uiText.app.toolbar.copied : notePath}>{pathCopied ? <Check size={16} /> : <Copy size={16} />}</button>
               </div>
               <div className={`save-state ${saveState}`}><i />{saveLabels[saveState]}</div>
-              <button className={`icon-button reload-button ${reloadBusy ? "spinning" : ""}`} onClick={() => void reloadWorkspace()} disabled={reloadBusy || saveState === "dirty" || saveState === "saving"} aria-label="ツリーとノートを再読み込み" title="ツリーとノートを再読み込み"><RefreshCw size={17} /></button>
-              <button className="icon-button organize-button" onClick={() => setOrganizeOpen(true)} disabled={saveState === "dirty" || saveState === "saving"} aria-label="ノートの名前と保存先を変更" title="名前変更・移動"><PencilLine size={17} /></button>
-              <div className="view-switch" aria-label="表示モード">
-                <button className={view === "edit" ? "active" : ""} onClick={() => setView("edit")} title="編集"><FilePenLine size={17} /></button>
-                <button className={view === "split" ? "active" : ""} onClick={() => setView("split")} title="分割"><Columns2 size={17} /></button>
-                <button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")} title="プレビュー"><Eye size={17} /></button>
+              <button className={`icon-button reload-button ${reloadBusy ? "spinning" : ""}`} onClick={() => void reloadWorkspace()} disabled={reloadBusy || saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.reload} title={uiText.app.toolbar.reload}><RefreshCw size={17} /></button>
+              <button className="icon-button organize-button" onClick={() => setOrganizeOpen(true)} disabled={saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.organize} title={uiText.app.toolbar.organizeShort}><PencilLine size={17} /></button>
+              <div className="view-switch" aria-label={uiText.app.toolbar.viewMode}>
+                <button className={view === "edit" ? "active" : ""} onClick={() => setView("edit")} title={uiText.app.toolbar.edit}><FilePenLine size={17} /></button>
+                <button className={view === "split" ? "active" : ""} onClick={() => setView("split")} title={uiText.app.toolbar.split}><Columns2 size={17} /></button>
+                <button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")} title={uiText.app.toolbar.preview}><Eye size={17} /></button>
               </div>
-              <button className="icon-button delete-button" onClick={deleteCurrent} aria-label="ノートを削除"><Trash2 size={17} /></button>
-              <button className={`icon-button outline-toggle ${outlineExpanded ? "active" : ""}`} onClick={toggleOutline} aria-label={outlineExpanded ? "目次を閉じる" : "目次を表示"} aria-expanded={outlineExpanded} aria-controls="note-outline" title="目次"><ListTree size={18} /></button>
+              <button className="icon-button delete-button" onClick={deleteCurrent} aria-label={uiText.app.toolbar.deleteNote}><Trash2 size={17} /></button>
+              <button className={`icon-button outline-toggle ${outlineExpanded ? "active" : ""}`} onClick={toggleOutline} aria-label={outlineExpanded ? uiText.app.toolbar.closeOutline : uiText.app.toolbar.showOutline} aria-expanded={outlineExpanded} aria-controls="note-outline" title={uiText.app.toolbar.outline}><ListTree size={18} /></button>
             </header>
-            <div className="mobile-tabs"><button className={view !== "preview" ? "active" : ""} onClick={() => setView("edit")}>編集</button><button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>プレビュー</button></div>
+            <div className="mobile-tabs"><button className={view !== "preview" ? "active" : ""} onClick={() => setView("edit")}>{uiText.app.toolbar.edit}</button><button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>{uiText.app.toolbar.preview}</button></div>
             <div className={`document-workarea view-${view} ${outlineVisible ? "" : "outline-hidden"}`} id="preview">
               {view !== "preview" ? <EditorPane content={content} onChange={setContent} /> : null}
               {view !== "edit" ? <PreviewPane content={content} links={note.links} onWikilink={selectById} /> : null}
-              {outlineOpen ? <button className="outline-scrim" aria-label="目次の外側を閉じる" onClick={() => setOutlineOpen(false)} /> : null}
+              {outlineOpen ? <button className="outline-scrim" aria-label={uiText.app.toolbar.closeOutlineOutside} onClick={() => setOutlineOpen(false)} /> : null}
               <Outline note={{ ...note, content }} drawerOpen={outlineOpen} desktopVisible={outlineVisible} onClose={() => setOutlineOpen(false)} onBacklink={(id) => void selectById(id)} />
             </div>
             <footer className="statusbar">
-              <span className="mcp-status"><i />{status?.mcp_ready ? "MCP 接続可能" : "MCP 停止中"}</span>
+              <span className="mcp-status"><i />{status?.mcp_ready ? uiText.app.mcpReady : uiText.app.mcpStopped}</span>
               <span className="status-spacer" />
-              <span>Markdown</span><b /><span>UTF-8</span><b /><span>行 {cursor.line}, 列 {cursor.column}</span>
+              <span>{uiText.common.markdown}</span><b /><span>{uiText.app.encoding}</span><b /><span>{uiText.app.cursor(cursor.line, cursor.column)}</span>
             </footer>
-          </> : <div className="empty-document"><PanelLeftClose size={28} /><h1>ノートを選択してください</h1><p>左のワークスペースからMarkdownファイルを開きます。</p></div>}
+          </> : <div className="empty-document"><PanelLeftClose size={28} /><h1>{uiText.app.emptyDocument.title}</h1><p>{uiText.app.emptyDocument.description}</p></div>}
         </main>
       </div>
       <SearchDialog open={searchOpen} onClose={() => setSearchOpen(false)} onSelect={(id) => void selectById(id)} />

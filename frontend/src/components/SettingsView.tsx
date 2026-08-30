@@ -1,4 +1,5 @@
 import { ArrowLeft, Check, MoonStar, Settings2, Sun } from "lucide-react";
+import { uiText } from "../locales";
 import type { Theme } from "../theme";
 
 type Props = {
@@ -8,29 +9,29 @@ type Props = {
 };
 
 const themes = [
-  { id: "light", label: "ライト", description: "現在の明るく淡いブルーの表示", Icon: Sun },
-  { id: "dark", label: "ダーク", description: "目に優しい深いブルーの表示", Icon: MoonStar },
+  { id: "light", ...uiText.settings.themes.light, Icon: Sun },
+  { id: "dark", ...uiText.settings.themes.dark, Icon: MoonStar },
 ] satisfies Array<{ id: Theme; label: string; description: string; Icon: typeof Sun }>;
 
 export function SettingsView({ theme, onTheme, onClose }: Props) {
   return <>
     <header className="document-bar settings-document-bar">
-      <div className="settings-breadcrumb"><Settings2 size={17} /><strong>設定</strong><span>/</span><span>外観</span></div>
-      <button className="secondary-button settings-back-button" onClick={onClose}><ArrowLeft size={16} /><span>ノートに戻る</span></button>
+      <div className="settings-breadcrumb"><Settings2 size={17} /><strong>{uiText.settings.breadcrumb}</strong><span>/</span><span>{uiText.settings.appearance}</span></div>
+      <button className="secondary-button settings-back-button" onClick={onClose}><ArrowLeft size={16} /><span>{uiText.settings.backToNote}</span></button>
     </header>
     <div className="settings-scroll">
       <section className="settings-page" aria-labelledby="settings-title">
         <div className="settings-intro">
-          <span>SETTINGS</span>
-          <h1 id="settings-title">外観</h1>
-          <p>使いやすい表示テーマを選択できます。設定はこのブラウザに保存されます。</p>
+          <span>{uiText.settings.eyebrow}</span>
+          <h1 id="settings-title">{uiText.settings.appearance}</h1>
+          <p>{uiText.settings.description}</p>
         </div>
         <section className="settings-section" aria-labelledby="theme-heading">
           <div className="settings-section-heading">
-            <div><h2 id="theme-heading">テーマ</h2><p>aonote全体のカラーテーマを切り替えます。</p></div>
-            <span>{theme === "light" ? "ライト" : "ダーク"}</span>
+            <div><h2 id="theme-heading">{uiText.settings.themeTitle}</h2><p>{uiText.settings.themeDescription}</p></div>
+            <span>{uiText.settings.themes[theme].label}</span>
           </div>
-          <div className="theme-options" role="radiogroup" aria-label="画面テーマ">
+          <div className="theme-options" role="radiogroup" aria-label={uiText.settings.themeGroupLabel}>
             {themes.map(({ id, label, description, Icon }) => {
               const selected = theme === id;
               return <button key={id} className={`theme-option ${selected ? "selected" : ""}`} role="radio" aria-checked={selected} onClick={() => onTheme(id)}>
@@ -43,6 +44,6 @@ export function SettingsView({ theme, onTheme, onClose }: Props) {
         </section>
       </section>
     </div>
-    <footer className="statusbar settings-statusbar"><span className="settings-saved-status"><i />設定は自動的に保存されます</span><span className="status-spacer" /><span>テーマ: {theme === "light" ? "ライト" : "ダーク"}</span></footer>
+    <footer className="statusbar settings-statusbar"><span className="settings-saved-status"><i />{uiText.settings.savedAutomatically}</span><span className="status-spacer" /><span>{uiText.settings.currentTheme(uiText.settings.themes[theme].label)}</span></footer>
   </>;
 }
