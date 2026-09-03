@@ -40,6 +40,35 @@ AGENT_SKILL_CREATION_GUIDANCE = """## Creating folders and notes
 - Do not pass `filename` or `folder_id` together with `path`.
 
 """
+AGENT_SKILL_WRITE_SCOPE = (
+    "- `notes:write`: create folders and create, update, rename, move, and delete notes."
+)
+PRE_REFRESH_AGENT_SKILL_WRITE_SCOPE = (
+    "- `notes:write`: create, update, rename, move, and delete notes."
+)
+AGENT_SKILL_ATTRIBUTION_GUIDANCE = """## Attribution
+
+- The display name entered on the OAuth consent screen is recorded as `actor_name` for MCP writes.
+- The registered OAuth client name is recorded as `client_name`.
+- aonote shows the display name in note metadata and reveals the client name on hover.
+- Do not pass author information in tool arguments; attribution comes from the OAuth identity.
+
+"""
+AGENT_SKILL_NEW_NOTE_GUIDANCE = """For a new note:
+
+- Search for duplicates first.
+- When the destination workspace path is known, use `create_note` with `path`; missing parent folders are created automatically within the configured depth limit.
+- Otherwise, use `list_folders` to obtain the destination folder ID and call `create_note` with `filename` and `folder_id`.
+- Include a clear H1 heading in the content.
+
+"""
+PRE_REFRESH_AGENT_SKILL_NEW_NOTE_GUIDANCE = """For a new note:
+
+- Search for duplicates first.
+- Use `list_folders` to obtain the destination folder ID.
+- Use `create_note` with a `.md` filename and a clear H1 heading in the content.
+
+"""
 MCP_PATH_GUIDANCE = """## パスでノートを取得
 
 `get_note`にはノートIDだけでなく、ブラウザのコピーボタンで取得したワークスペース相対パスも指定できます。
@@ -67,9 +96,7 @@ MCP_CREATION_GUIDANCE = """## フォルダとパス指定ノートを作成
 
 """
 
-
-SEED_NOTES = {
-    "01-ようこそ.md": """# aonoteへようこそ
+PRE_REFRESH_WELCOME_NOTE = """# aonoteへようこそ
 
 aonoteは、あなたとAIが同じ知識を育てるためのMarkdownワークスペースです。
 
@@ -81,8 +108,8 @@ aonoteは、あなたとAIが同じ知識を育てるためのMarkdownワーク�
 - OAuthで保護されたMCPからAIと連携
 
 次は [[02-MCP連携|MCP連携]] を開いて、AIからノートを利用する方法を確認してください。
-""",
-    "02-MCP連携.md": f"""# MCP連携のセットアップ
+"""
+PRE_REFRESH_MCP_NOTE = f"""# MCP連携のセットアップ
 
 ## 概要
 
@@ -109,8 +136,8 @@ https://notes.example.com/mcp
 接続後は、ノートの検索・閲覧・作成・更新を会話から実行できます。
 
 AIエージェント向けのSkillを作成する場合は、[[04-Agent Skill|Agent Skill]] のテンプレートを参照してください。
-""",
-    "03-SQLite全文検索.md": """# SQLite全文検索
+"""
+PRE_REFRESH_SEARCH_NOTE = """# SQLite全文検索
 
 aonoteの検索はSQLite FTS5を利用します。
 
@@ -119,6 +146,74 @@ aonoteの検索はSQLite FTS5を利用します。
 - タイトル、ファイル名、本文を一つの索引に保存
 - 日本語の部分一致にはtrigramトークナイザーを利用
 - 3文字未満の語はLIKE検索へフォールバック
+
+個人用のノートでは、構成が単純で説明可能な検索がよく合います。
+"""
+
+
+SEED_NOTES = {
+    "01-ようこそ.md": """# aonoteへようこそ
+
+aonoteは、あなたとAIが同じ知識を育てるためのMarkdownワークスペースです。
+
+## できること
+
+- 複数階層のフォルダツリーでノートを整理
+- Markdownを編集・プレビューし、変更を自動保存
+- Markdown Alerts、Mermaid、Wikiリンク、バックリンクを表示
+- SQLite FTS5でタイトル・ファイル名・本文を全文検索
+- 更新履歴を確認し、削除したノートをゴミ箱から復元
+- OAuthで保護されたMCPを通じてAIと安全に共同編集
+- 設定画面でライト／ダークテーマと言語を切り替え
+
+次は [[02-MCP連携|MCP連携]] を開いて、AIからノートを利用する方法を確認してください。
+""",
+    "02-MCP連携.md": f"""# MCP連携のセットアップ
+
+## 概要
+
+MCP（Model Context Protocol）を使うと、ChatGPT、Hermes Agent、OpenWebUIなどの対応クライアントからaonoteを利用できます。
+
+接続先には、外部からアクセスできる公開HTTPSのMCP URLを指定します。
+
+```text
+https://notes.example.com/mcp
+```
+
+## OAuth
+
+aonoteはOAuth 2.1の認可コードフローとPKCE（S256）を使用します。対応クライアントはOAuthメタデータを取得し、必要に応じて動的クライアント登録を行います。
+
+- 認証画面で表示名を入力します
+- クライアントが要求した範囲から、閲覧・検索・書き込みスコープを選択します
+- 読み取り専用のAIには書き込みスコープを許可しないでください
+- MCPによる作成・修正には、表示名とOAuthクライアント名が記録されます
+- アクセストークンは短寿命で、各リクエスト時に検証されます
+
+{MCP_PATH_GUIDANCE}{MCP_CREATION_GUIDANCE}## MCPクライアントに接続
+
+利用するクライアントのMCP連携設定に、上記のURLを登録してOAuth認証を開始します。認証後は、許可したスコープに応じて次の操作を会話から実行できます。
+
+- ノートの一覧・パス指定取得・全文検索
+- フォルダとノートの作成
+- ノートの更新・名前変更・移動
+- ノートのゴミ箱への移動
+
+ゴミ箱からの復元と完全削除はブラウザで行います。
+
+AIエージェント向けのSkillを作成する場合は、[[04-Agent Skill|Agent Skill]] のテンプレートを参照してください。
+""",
+    "03-SQLite全文検索.md": """# SQLite全文検索
+
+aonoteの検索はSQLite FTS5を利用します。
+
+## 方針
+
+- タイトル、ファイル名、本文を一つのFTS5索引に保存
+- 3文字以上の検索語はtrigramトークナイザーで部分一致検索
+- 3文字未満の検索語はLIKE検索へフォールバック
+- FTS5検索の結果は関連度順、短い検索語の結果は更新日時順に表示
+- 作成・更新・名前変更時に索引を更新し、ゴミ箱内のノートは検索対象から除外
 
 個人用のノートでは、構成が単純で説明可能な検索がよく合います。
 """,
@@ -151,11 +246,11 @@ Use aonote MCP as the operational layer for this Markdown workspace. Prefer aono
 
 - `notes:read`: list and read notes and folders.
 - `notes:search`: search titles, filenames, and bodies with SQLite FTS5.
-- `notes:write`: create, update, rename, move, and delete notes.
+{AGENT_SKILL_WRITE_SCOPE}
 
 Respect the granted scopes. If a required scope is unavailable, explain the limitation instead of retrying the operation.
 
-{AGENT_SKILL_PATH_GUIDANCE}{AGENT_SKILL_CREATION_GUIDANCE}## Discovery
+{AGENT_SKILL_PATH_GUIDANCE}{AGENT_SKILL_CREATION_GUIDANCE}{AGENT_SKILL_ATTRIBUTION_GUIDANCE}## Discovery
 
 - Use `search_notes` for keyword searches across titles, filenames, and Markdown bodies.
 - Use `list_notes` to browse recently updated notes.
@@ -170,13 +265,7 @@ For an existing note:
 - Use `update_note` with the current note ID, complete updated content, and current version.
 - Keep the H1 heading and all unrelated sections intact unless the user asks otherwise.
 
-For a new note:
-
-- Search for duplicates first.
-- Use `list_folders` to obtain the destination folder ID.
-- Use `create_note` with a `.md` filename and a clear H1 heading in the content.
-
-For organization:
+{AGENT_SKILL_NEW_NOTE_GUIDANCE}For organization:
 
 - Use `rename_note` for filename changes.
 - Use `move_note` for folder changes, passing `null` only when moving to 未整理 is intended.
@@ -202,6 +291,23 @@ PRE_FOLDER_AGENT_SKILL_NOTE = (
     SEED_NOTES["04-Agent Skill.md"]
     .replace(AGENT_SKILL_CREATION_GUIDANCE, "")
     .replace("- `create_folder`\n", "")
+)
+
+
+def _pre_agent_skill_refresh(content: str) -> str:
+    return (
+        content
+        .replace(AGENT_SKILL_WRITE_SCOPE, PRE_REFRESH_AGENT_SKILL_WRITE_SCOPE)
+        .replace(AGENT_SKILL_ATTRIBUTION_GUIDANCE, "")
+        .replace(
+            AGENT_SKILL_NEW_NOTE_GUIDANCE,
+            PRE_REFRESH_AGENT_SKILL_NEW_NOTE_GUIDANCE,
+        )
+    )
+
+
+PRE_REFRESH_AGENT_SKILL_NOTE = _pre_agent_skill_refresh(
+    SEED_NOTES["04-Agent Skill.md"]
 )
 PRE_TRASH_AGENT_SKILL_NOTE = SEED_NOTES["04-Agent Skill.md"].replace(
     "7. Delete a note only after explicit user confirmation. Deletion moves it to aonote's browser trash; MCP cannot restore or permanently delete it.\n",
@@ -231,14 +337,34 @@ PRE_FOLDER_MCP_NOTE = SEED_NOTES["02-MCP連携.md"].replace(
     MCP_CREATION_GUIDANCE, ""
 )
 LEGACY_MCP_NOTE = PRE_FOLDER_MCP_NOTE.replace(MCP_PATH_GUIDANCE, "")
+PRE_REFRESH_PRE_FOLDER_MCP_NOTE = PRE_REFRESH_MCP_NOTE.replace(
+    MCP_CREATION_GUIDANCE, ""
+)
+PRE_REFRESH_LEGACY_MCP_NOTE = PRE_REFRESH_PRE_FOLDER_MCP_NOTE.replace(
+    MCP_PATH_GUIDANCE, ""
+)
 LEGACY_SEED_NOTES = {
-    "02-MCP連携.md": (PRE_FOLDER_MCP_NOTE, LEGACY_MCP_NOTE),
+    "01-ようこそ.md": (PRE_REFRESH_WELCOME_NOTE,),
+    "02-MCP連携.md": (
+        PRE_FOLDER_MCP_NOTE,
+        LEGACY_MCP_NOTE,
+        PRE_REFRESH_MCP_NOTE,
+        PRE_REFRESH_PRE_FOLDER_MCP_NOTE,
+        PRE_REFRESH_LEGACY_MCP_NOTE,
+    ),
+    "03-SQLite全文検索.md": (PRE_REFRESH_SEARCH_NOTE,),
     "04-Agent Skill.md": (
+        PRE_REFRESH_AGENT_SKILL_NOTE,
         PRE_TRASH_AGENT_SKILL_NOTE,
+        _pre_agent_skill_refresh(PRE_TRASH_AGENT_SKILL_NOTE),
         PRE_FOLDER_AGENT_SKILL_NOTE,
+        _pre_agent_skill_refresh(PRE_FOLDER_AGENT_SKILL_NOTE),
         PRE_FOLDER_PRE_TRASH_AGENT_SKILL_NOTE,
+        _pre_agent_skill_refresh(PRE_FOLDER_PRE_TRASH_AGENT_SKILL_NOTE),
         LEGACY_AGENT_SKILL_NOTE,
+        _pre_agent_skill_refresh(LEGACY_AGENT_SKILL_NOTE),
         LEGACY_PRE_TRASH_AGENT_SKILL_NOTE,
+        _pre_agent_skill_refresh(LEGACY_PRE_TRASH_AGENT_SKILL_NOTE),
     ),
 }
 

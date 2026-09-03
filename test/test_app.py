@@ -11,6 +11,10 @@ from aonote.config import Settings
 from aonote.db import (
     PRE_FOLDER_AGENT_SKILL_NOTE,
     PRE_FOLDER_MCP_NOTE,
+    PRE_REFRESH_MCP_NOTE,
+    PRE_REFRESH_AGENT_SKILL_NOTE,
+    PRE_REFRESH_SEARCH_NOTE,
+    PRE_REFRESH_WELCOME_NOTE,
     SEED_NOTES,
     Database,
 )
@@ -99,6 +103,8 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         sqlite_note_response = await client.get(f"/api/notes/{sqlite_note['id']}")
         assert sqlite_note_response.status_code == 200
         assert "Embeddingモデルを使わず" not in sqlite_note_response.json()["content"]
+        assert "3文字以上の検索語" in sqlite_note_response.json()["content"]
+        assert "ゴミ箱内のノートは検索対象から除外" in sqlite_note_response.json()["content"]
         skill_note = next(note for note in folders[0]["notes"] if note["filename"] == "04-Agent Skill.md")
         skill_note_response = await client.get(f"/api/notes/{skill_note['id']}")
         assert skill_note_response.status_code == 200
@@ -106,6 +112,10 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert "`get_note` accepts exactly one of `note_id` or `path`" in skill_note_response.json()["content"]
         assert "`create_folder`" in skill_note_response.json()["content"]
         assert "Missing parent folders are created automatically" in skill_note_response.json()["content"]
+        assert "create folders and create, update, rename, move, and delete notes" in skill_note_response.json()["content"]
+        assert "use `create_note` with `path`" in skill_note_response.json()["content"]
+        assert "recorded as `actor_name`" in skill_note_response.json()["content"]
+        assert "reveals the client name on hover" in skill_note_response.json()["content"]
         assert "`update_note`" in skill_note_response.json()["content"]
         assert "`delete_note`" in skill_note_response.json()["content"]
         assert "browser trash" in skill_note_response.json()["content"]
@@ -113,10 +123,15 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         mcp_note_response = await client.get(f"/api/notes/{mcp_note['id']}")
         assert mcp_note_response.status_code == 200
         assert "Projects/test/note.md" in mcp_note_response.json()["content"]
+        assert "Hermes Agent、OpenWebUI" in mcp_note_response.json()["content"]
+        assert "表示名とOAuthクライアント名" in mcp_note_response.json()["content"]
+        assert "ゴミ箱からの復元と完全削除はブラウザ" in mcp_note_response.json()["content"]
         assert any(link["filename"] == "01-ようこそ.md" for link in mcp_note_response.json()["backlinks"])
         welcome_note = next(note for note in folders[0]["notes"] if note["filename"] == "01-ようこそ.md")
         welcome_note_response = await client.get(f"/api/notes/{welcome_note['id']}")
         assert welcome_note_response.status_code == 200
+        assert "Markdown Alerts、Mermaid" in welcome_note_response.json()["content"]
+        assert "ライト／ダークテーマと言語" in welcome_note_response.json()["content"]
         assert welcome_note_response.json()["links"] == [
             {"target": "02-MCP連携", "id": mcp_note["id"]}
         ]
@@ -1023,3 +1038,34 @@ def test_only_seed_notes_receive_brand_case_migration(tmp_path: Path):
             "SELECT COUNT(*) FROM note_revisions WHERE note_id IN (?, ?)",
             (legacy_mcp["id"], legacy_skill["id"]),
         ).fetchone()[0] == 2
+
+
+def test_unmodified_previous_seed_notes_are_migrated(tmp_path: Path):
+    database = Database(tmp_path / "seed-refresh-migration.sqlite3")
+    database.initialize()
+    with database.connect() as connection:
+        notes = connection.execute(
+            """SELECT n.* FROM notes n
+               JOIN folders f ON f.id = n.folder_id
+               WHERE f.name = 'ようこそ' AND f.parent_id IS NULL
+               ORDER BY n.filename"""
+        ).fetchall()
+        previous_contents = {
+            "01-ようこそ.md": PRE_REFRESH_WELCOME_NOTE,
+            "02-MCP連携.md": PRE_REFRESH_MCP_NOTE,
+            "03-SQLite全文検索.md": PRE_REFRESH_SEARCH_NOTE,
+            "04-Agent Skill.md": PRE_REFRESH_AGENT_SKILL_NOTE,
+        }
+        for note in notes:
+            connection.execute(
+                "UPDATE notes SET content = ? WHERE id = ?",
+                (previous_contents[note["filename"]], note["id"]),
+            )
+
+    database.initialize()
+
+    for note in notes:
+        migrated = database.get_note(note["id"])
+        assert migrated is not None
+        assert migrated["content"] == SEED_NOTES[note["filename"]]
+        assert migrated["version"] == note["version"] + 1
