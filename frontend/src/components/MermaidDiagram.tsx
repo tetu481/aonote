@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 
 type MermaidApi = (typeof import("mermaid"))["default"];
 
@@ -30,6 +30,7 @@ function loadMermaid(): Promise<MermaidApi> {
 }
 
 export function MermaidDiagram({ chart }: { chart: string }) {
+  const uiText = useUiText();
   const reactId = useId();
   const diagramId = `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const renderVersion = useRef(0);
@@ -52,7 +53,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [chart, diagramId]);
+  }, [chart, diagramId, uiText.mermaid.syntaxError]);
 
   if (error) return <div className="mermaid-error" role="alert">{error}</div>;
   if (!svg) return <div className="mermaid-loading" role="status">{uiText.mermaid.loading}</div>;

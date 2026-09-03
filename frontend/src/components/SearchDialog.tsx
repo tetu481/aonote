@@ -1,10 +1,11 @@
 import { FileText, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import type { SearchResult } from "../types";
 
 export function SearchDialog({ open, onClose, onSelect }: { open: boolean; onClose: () => void; onSelect: (id: string) => void }) {
+  const uiText = useUiText();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);

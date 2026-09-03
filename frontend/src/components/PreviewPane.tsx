@@ -2,7 +2,7 @@ import { Children, isValidElement, useCallback, useDeferredValue, useMemo, type 
 import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CircleAlert, Info, Lightbulb, ShieldAlert, TriangleAlert } from "lucide-react";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import { remarkAlerts } from "../remarkAlerts";
 import { remarkHeadingIds } from "../remarkHeadingIds";
 import type { Note } from "../types";
@@ -10,20 +10,21 @@ import { MermaidDiagram } from "./MermaidDiagram";
 
 type AlertKind = "note" | "tip" | "important" | "warning" | "caution";
 
-const alertTypes = {
-  note: { label: uiText.preview.alerts.note, Icon: Info },
-  tip: { label: uiText.preview.alerts.tip, Icon: Lightbulb },
-  important: { label: uiText.preview.alerts.important, Icon: CircleAlert },
-  warning: { label: uiText.preview.alerts.warning, Icon: TriangleAlert },
-  caution: { label: uiText.preview.alerts.caution, Icon: ShieldAlert },
-} satisfies Record<AlertKind, { label: string; Icon: typeof Info }>;
+const alertIcons = {
+  note: Info,
+  tip: Lightbulb,
+  important: CircleAlert,
+  warning: TriangleAlert,
+  caution: ShieldAlert,
+} satisfies Record<AlertKind, typeof Info>;
 
 function MarkdownBlockquote({ node: _node, children, className, ...props }: ComponentPropsWithoutRef<"blockquote"> & ExtraProps) {
-  const kind = Object.keys(alertTypes).find((key) => className?.split(" ").includes(`markdown-alert-${key}`)) as AlertKind | undefined;
+  const uiText = useUiText();
+  const kind = Object.keys(alertIcons).find((key) => className?.split(" ").includes(`markdown-alert-${key}`)) as AlertKind | undefined;
   if (!kind) return <blockquote className={className} {...props}>{children}</blockquote>;
-  const { label, Icon } = alertTypes[kind];
+  const Icon = alertIcons[kind];
   return <blockquote className={className} {...props}>
-    <div className="markdown-alert-title"><Icon size={16} />{label}</div>
+    <div className="markdown-alert-title"><Icon size={16} />{uiText.preview.alerts[kind]}</div>
     {children}
   </blockquote>;
 }
@@ -60,6 +61,7 @@ type Props = {
 };
 
 export function PreviewPane({ content, links, onWikilink }: Props) {
+  const uiText = useUiText();
   const deferred = useDeferredValue(content);
   const markdown = useMemo(() => normalizeWikilinks(deferred), [deferred]);
   const linkTargets = useMemo(

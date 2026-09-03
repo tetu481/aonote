@@ -1,13 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { uiText } from "./locales";
+import { LocaleProvider } from "./LocaleContext";
+import { applyLocaleMetadata, readStoredLocale } from "./locales";
 import { applyTheme, readStoredTheme } from "./theme";
 
-document.documentElement.lang = uiText.meta.language;
-document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute("content", uiText.meta.description);
+const initialLocale = readStoredLocale();
+applyLocaleMetadata(initialLocale);
 applyTheme(readStoredTheme());
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode><App /></React.StrictMode>,
+  <React.StrictMode><LocaleProvider initialLocale={initialLocale}><App /></LocaleProvider></React.StrictMode>,
 );

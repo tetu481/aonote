@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 
 type Props = { content: string; onChange: (content: string) => void };
 
 export function EditorPane({ content, onChange }: Props) {
+  const uiText = useUiText();
   const lines = useMemo(() => content.split("\n"), [content]);
   const lineRef = useRef<HTMLDivElement>(null);
   const [cursorLine, setCursorLine] = useState(1);

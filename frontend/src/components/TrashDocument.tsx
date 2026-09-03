@@ -1,5 +1,5 @@
 import { ListTree, RotateCcw } from "lucide-react";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import type { TrashedNote } from "../types";
 import { Outline } from "./Outline";
 import { PreviewPane } from "./PreviewPane";
@@ -17,6 +17,7 @@ type Props = {
 };
 
 export function TrashDocument({ note, compactOutline, outlineDrawerOpen, outlineVisible, restoreBusy, restoreError, onToggleOutline, onCloseOutline, onRestore }: Props) {
+  const uiText = useUiText();
   const outlineExpanded = compactOutline ? outlineDrawerOpen : outlineVisible;
 
   return <>

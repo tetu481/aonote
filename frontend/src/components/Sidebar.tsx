@@ -1,16 +1,11 @@
 import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Palette, Pencil, Search, Settings2, Trash2 } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { folderContainsNote, flattenNotes } from "../folderUtils";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import type { FolderNode, NoteSummary, TrashedNoteSummary } from "../types";
 import { DEFAULT_WELCOME_FOLDER_NAME } from "../workspaceDefaults";
 
 export type SidebarMode = "files" | "recent" | "trash" | "settings";
-
-const deletedAtFormatter = new Intl.DateTimeFormat(uiText.meta.locale, {
-  dateStyle: "short",
-  timeStyle: "short",
-});
 
 type FolderProps = {
   folder: FolderNode;
@@ -24,6 +19,7 @@ type FolderProps = {
 };
 
 const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolderId, onSelect, onSelectFolder, onRename, onDelete, revealKey }: FolderProps) {
+  const uiText = useUiText();
   const [open, setOpen] = useState(folder.name === DEFAULT_WELCOME_FOLDER_NAME);
   const containsSelection = folderContainsNote(folder, selectedId);
   useEffect(() => {
@@ -85,7 +81,12 @@ type Props = {
 };
 
 export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, selectedFolderId, revealKey, mode, mobileOpen, desktopOpen, onMode, onSelect, onSelectTrash, onSelectFolder, onSearch, onRenameFolder, onDeleteFolder, onPurgeTrash, trashBusy, trashMessage }: Props) {
+  const uiText = useUiText();
   const [trashDays, setTrashDays] = useState("30");
+  const deletedAtFormatter = useMemo(() => new Intl.DateTimeFormat(uiText.meta.locale, {
+    dateStyle: "short",
+    timeStyle: "short",
+  }), [uiText.meta.locale]);
   const purgeDays = Number(trashDays);
   const validPurgeDays = Number.isInteger(purgeDays) && purgeDays >= 0 && purgeDays <= 36500;
   return (

@@ -1,5 +1,5 @@
 import { FolderPlus, Menu, Plus, Search } from "lucide-react";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import { Brand } from "./Brand";
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
 };
 
 export function TopBar({ onMenu, onSearch, onCreate, onCreateFolder, sidebarOpen }: Props) {
+  const uiText = useUiText();
   return (
     <header className="topbar">
       <button className="icon-button menu-button" onClick={onMenu} aria-label={sidebarOpen ? uiText.topBar.hideWorkspace : uiText.topBar.showWorkspace} aria-pressed={sidebarOpen}><Menu size={20} /></button>

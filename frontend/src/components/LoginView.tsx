@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { api } from "../api";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import { Brand } from "./Brand";
 
 export function LoginView({ onLogin }: { onLogin: () => void }) {
+  const uiText = useUiText();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   return <main className="login-view"><form onSubmit={async (event) => { event.preventDefault(); setError(""); try { await api.login(password); onLogin(); } catch { setError(uiText.login.invalidPassword); } }}>

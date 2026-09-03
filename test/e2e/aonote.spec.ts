@@ -226,7 +226,7 @@ test("設定画面でライトとダークテーマを切り替えて保存で�
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page.getByRole("button", { name: "設定", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "設定", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "外観", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "設定", exact: true })).toBeVisible();
   await expect(page.getByRole("radio", { name: /ライト/ })).toHaveAttribute("aria-checked", "true");
 
   await page.getByRole("radio", { name: /ダーク/ }).click();
@@ -245,7 +245,7 @@ test("設定画面でライトとダークテーマを切り替えて保存で�
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "ワークスペースを表示" }).click();
   await page.getByRole("button", { name: "設定", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "外観", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "設定", exact: true })).toBeVisible();
   await expect(page.locator(".sidebar-shell")).not.toHaveClass(/mobile-open/);
   await expect.poll(async () => (await page.locator(".sidebar-shell").boundingBox())?.x ?? 0).toBeLessThan(-300);
   await page.screenshot({ path: `${screenshotDir}/aonote-settings-dark-mobile.png`, fullPage: false });
@@ -254,6 +254,53 @@ test("設定画面でライトとダークテーマを切り替えて保存で�
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#eef7ff");
   await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:theme:v1"))).toBe("light");
+  expect(browserIssues).toEqual([]);
+});
+
+test("設定画面で日本語と英語を切り替えて保存できる", async ({ page }) => {
+  const browserIssues: string[] = [];
+  page.on("console", (message) => { if (["error", "warning"].includes(message.type())) browserIssues.push(`${message.type()}: ${message.text()}`); });
+  page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.message}`));
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  await expect(page.getByRole("radio", { name: /日本語/ })).toHaveAttribute("aria-checked", "true");
+
+  await page.getByRole("radio", { name: /English/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", "A Markdown workspace for you and AI");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Search notes", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New folder", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New note", exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /English/ })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:locale:v1"))).toBe("en");
+  await page.getByRole("button", { name: "New note", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "New note", exact: true })).toBeVisible();
+  await expect(page.getByPlaceholder("New note.md")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.screenshot({ path: `${screenshotDir}/aonote-settings-english-desktop.png`, fullPage: false });
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByLabel("Markdown preview")).toBeVisible();
+  await expect(page.getByText("Created by", { exact: true })).toBeVisible();
+  await expect(page.locator(".note-metadata").getByText("Administrator", { exact: true }).first()).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Show workspace" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /English/ })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await page.locator(".sidebar-shell").boundingBox())?.x ?? 0).toBeLessThan(-300);
+  await page.getByRole("radio", { name: /English/ }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${screenshotDir}/aonote-settings-english-mobile.png`, fullPage: false });
+
+  await page.getByRole("radio", { name: /日本語/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+  await expect(page.getByRole("heading", { name: "設定", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:locale:v1"))).toBe("ja");
   expect(browserIssues).toEqual([]);
 });
 

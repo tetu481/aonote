@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flattenFolders } from "../folderUtils";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import type { FolderNode } from "../types";
 
 type Props = {
@@ -13,6 +13,7 @@ type Props = {
 };
 
 export function NewFolderDialog({ open, folders, maxDepth, defaultParentId, onClose, onCreate }: Props) {
+  const uiText = useUiText();
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

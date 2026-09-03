@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import type { FolderNode } from "../types";
 
 type Props = {
@@ -9,6 +9,7 @@ type Props = {
 };
 
 export function RenameFolderDialog({ folder, onClose, onSave }: Props) {
+  const uiText = useUiText();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

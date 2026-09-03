@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flattenFolders } from "../folderUtils";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import type { FolderNode } from "../types";
 import { DEFAULT_WELCOME_FOLDER_NAME } from "../workspaceDefaults";
 
 export function NewNoteDialog({ open, folders, defaultFolderId, onClose, onCreate }: { open: boolean; folders: FolderNode[]; defaultFolderId: string | null; onClose: () => void; onCreate: (filename: string, folderId: string | null) => Promise<void> }) {
+  const uiText = useUiText();
   const [name, setName] = useState("");
   const [folder, setFolder] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

@@ -14,11 +14,11 @@ import { SettingsView } from "./components/SettingsView";
 import { Sidebar, type SidebarMode } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { TrashDocument } from "./components/TrashDocument";
+import { useUiText } from "./LocaleContext";
 import { useAutosave } from "./hooks/useAutosave";
 import { flattenNotes, folderContainsFolder } from "./folderUtils";
-import { uiText } from "./locales";
 import { applyTheme, persistTheme, readStoredTheme, type Theme } from "./theme";
-import type { AppStatus, FolderNode, Note, NoteSummary, SaveState, TrashedNote, TrashedNoteSummary } from "./types";
+import type { AppStatus, FolderNode, Note, NoteSummary, TrashedNote, TrashedNoteSummary } from "./types";
 import { DEFAULT_WELCOME_FOLDER_NAME, DEFAULT_WELCOME_NOTE_FILENAME } from "./workspaceDefaults";
 import "./styles.css";
 
@@ -30,11 +30,8 @@ function initialOutlineVisible() {
   catch { return true; }
 }
 
-const saveLabels: Record<SaveState, string> = {
-  ...uiText.app.saveState,
-};
-
 export default function App() {
+  const uiText = useUiText();
   const [tree, setTree] = useState<FolderNode[]>([]);
   const [recent, setRecent] = useState<NoteSummary[]>([]);
   const [trash, setTrash] = useState<TrashedNoteSummary[]>([]);
@@ -322,7 +319,7 @@ export default function App() {
                 <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id}>{folder.name}<b>/</b></span>) : <span>{uiText.common.unfiled}<b>/</b></span>}<strong>{note.filename}</strong></div>
                 <button className={`icon-button copy-path-button ${pathCopied ? "copied" : ""}`} onClick={() => void copyCurrentPath()} aria-label={pathCopied ? uiText.app.toolbar.copiedPath : uiText.app.toolbar.copyPath} title={pathCopied ? uiText.app.toolbar.copied : notePath}>{pathCopied ? <Check size={16} /> : <Copy size={16} />}</button>
               </div>
-              <div className={`save-state ${saveState}`}><i />{saveLabels[saveState]}</div>
+              <div className={`save-state ${saveState}`}><i />{uiText.app.saveState[saveState]}</div>
               <button className={`icon-button reload-button ${reloadBusy ? "spinning" : ""}`} onClick={() => void reloadWorkspace()} disabled={reloadBusy || saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.reload} title={uiText.app.toolbar.reload}><RefreshCw size={17} /></button>
               <button className="icon-button organize-button" onClick={() => setOrganizeOpen(true)} disabled={saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.organize} title={uiText.app.toolbar.organizeShort}><PencilLine size={17} /></button>
               <div className="view-switch" aria-label={uiText.app.toolbar.viewMode}>

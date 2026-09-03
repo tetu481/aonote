@@ -1,17 +1,15 @@
 import { Link2, X } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import { extractOutlineHeadings, headingId } from "../remarkHeadingIds";
 import type { Note } from "../types";
-
-const dateFormatter = new Intl.DateTimeFormat(uiText.meta.locale, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
+import { DEFAULT_ADMIN_ACTOR_NAME } from "../workspaceDefaults";
 
 function ActorName({ name, via }: { name: string; via: string | null }) {
+  const uiText = useUiText();
   const tooltip = via ? uiText.outline.via(via) : undefined;
-  return <span className="actor-name" data-tooltip={tooltip} tabIndex={via ? 0 : undefined}>{name}</span>;
+  const displayName = !via && name === DEFAULT_ADMIN_ACTOR_NAME ? uiText.outline.administrator : name;
+  return <span className="actor-name" data-tooltip={tooltip} tabIndex={via ? 0 : undefined}>{displayName}</span>;
 }
 
 type Props = {
@@ -23,8 +21,13 @@ type Props = {
 };
 
 export function Outline({ note, drawerOpen, desktopVisible, onClose, onBacklink }: Props) {
+  const uiText = useUiText();
   const closeRef = useRef<HTMLButtonElement>(null);
   const headings = useMemo(() => extractOutlineHeadings(note.content), [note.content]);
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(uiText.meta.locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }), [uiText.meta.locale]);
   useEffect(() => {
     if (drawerOpen) closeRef.current?.focus();
   }, [drawerOpen]);

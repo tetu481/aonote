@@ -18,6 +18,7 @@ aonote is a lightweight web workspace where you and AI can work with the same Ma
 - Note author, last editor, creation time, and modification time
 - Note renaming and moving, plus folder creation with a configurable maximum depth
 - Read-only previews of deleted notes, restoration, and permanent deletion after a specified number of days
+- Japanese/English display switching from Settings, saved in the browser
 
 ## Local Development
 

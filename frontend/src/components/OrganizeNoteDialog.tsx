@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flattenFolders } from "../folderUtils";
-import { uiText } from "../locales";
+import { useUiText } from "../LocaleContext";
 import type { FolderNode, Note } from "../types";
 
 type Props = {
@@ -12,6 +12,7 @@ type Props = {
 };
 
 export function OrganizeNoteDialog({ open, note, folders, onClose, onSave }: Props) {
+  const uiText = useUiText();
   const [filename, setFilename] = useState("");
   const [folderId, setFolderId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
