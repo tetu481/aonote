@@ -66,15 +66,15 @@ test("ワークスペース機能をデスクトップで操作できる", async
   await page.getByRole("button", { name: "新規フォルダ" }).click();
   await expect(page.locator(".new-note-dialog select option:checked")).toHaveText("ようこそ");
   await page.getByRole("button", { name: "キャンセル" }).click();
-  await page.screenshot({ path: "/tmp/aonote-initial-welcome.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-initial-welcome.png`, fullPage: false });
   await page.getByRole("button", { name: "03-SQLite全文検索.md", exact: true }).click();
   await expect(page.getByLabel("Markdownプレビュー")).toContainText("aonoteの検索はSQLite FTS5を利用します。");
   await expect(page.getByLabel("Markdownプレビュー")).not.toContainText("Embeddingモデルを使わず");
-  await page.screenshot({ path: "/tmp/aonote-initial-data.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-initial-data.png`, fullPage: false });
   await page.getByRole("button", { name: "04-Agent Skill.md", exact: true }).click();
   await expect(page.getByLabel("Markdownプレビュー")).toContainText("aonote — Agent Skill");
   await expect(page.getByLabel("Markdownプレビュー")).toContainText("name: aonote-workspace");
-  await page.screenshot({ path: "/tmp/aonote-agent-skill.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-agent-skill.png`, fullPage: false });
   await expect(page.getByLabel("Markdownエディタ")).toHaveCount(0);
   await expect(page.getByText("作成者", { exact: true })).toBeVisible();
   await expect(page.getByText("管理者", { exact: true }).first()).toBeVisible();
@@ -109,12 +109,12 @@ test("ワークスペース機能をデスクトップで操作できる", async
 
   await page.getByRole("button", { name: "新規ノート" }).click();
   await expect(page.locator(".new-note-dialog select option:checked")).toHaveText(secondName);
-  await page.screenshot({ path: "/tmp/aonote-selected-folder-new-note.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-selected-folder-new-note.png`, fullPage: false });
   await page.getByRole("button", { name: "キャンセル" }).click();
 
   await page.getByRole("button", { name: "新規フォルダ" }).click();
   await expect(page.locator(".new-note-dialog select option:checked")).toHaveText(secondName);
-  await page.screenshot({ path: "/tmp/aonote-selected-folder-new-folder.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-selected-folder-new-folder.png`, fullPage: false });
   await page.getByRole("button", { name: "キャンセル" }).click();
 
   const thirdButton = page.getByRole("button", { name: thirdName, exact: true });
@@ -211,7 +211,7 @@ test("ワークスペース機能をデスクトップで操作できる", async
   await expect(sidebar).toBeVisible();
 
   await rootButton.hover();
-  await page.screenshot({ path: "/tmp/aonote-desktop.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-desktop.png`, fullPage: false });
   expect(browserIssues).toEqual([]);
 });
 
@@ -286,6 +286,11 @@ test("設定画面で日本語と英語を切り替えて保存できる", async
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByLabel("Markdown preview")).toBeVisible();
+  await expect(page.locator(".breadcrumb")).toContainText("01-Welcome.md");
+  await expect(page.getByRole("button", { name: "Welcome", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: "ようこそ", exact: true })).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "01-Welcome.md", exact: true })).toHaveClass(/selected/);
+  await page.screenshot({ path: `${screenshotDir}/aonote-initial-welcome-en.png`, fullPage: false });
   await expect(page.getByText("Created by", { exact: true })).toBeVisible();
   await expect(page.locator(".note-metadata").getByText("Administrator", { exact: true }).first()).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -301,6 +306,8 @@ test("設定画面で日本語と英語を切り替えて保存できる", async
   await expect(page.locator("html")).toHaveAttribute("lang", "ja");
   await expect(page.getByRole("heading", { name: "設定", exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:locale:v1"))).toBe("ja");
+  await page.reload();
+  await expect(page.locator(".breadcrumb")).toContainText("01-ようこそ.md");
   expect(browserIssues).toEqual([]);
 });
 
@@ -358,7 +365,7 @@ test("ワークスペースを名前順で表示する", async ({ page, request 
   );
   expect(directClasses.slice(0, 3).every((value) => value.includes("folder-group"))).toBeTruthy();
   expect(directClasses.slice(3).every((value) => value.includes("note-row"))).toBeTruthy();
-  await page.screenshot({ path: "/tmp/aonote-name-sort.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-name-sort.png`, fullPage: false });
   expect(browserIssues).toEqual([]);
 });
 
@@ -404,7 +411,7 @@ test("削除済みノートをゴミ箱で閲覧・復元・完全削除でき�
   await expect(page.getByLabel("Markdownプレビュー")).toContainText("ゴミ箱で読み取る本文");
   await expect(page.getByLabel("Markdownエディタ")).toHaveCount(0);
   await expect(page.locator(".view-switch")).toHaveCount(0);
-  await page.screenshot({ path: "/tmp/aonote-trash-preview.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-trash-preview.png`, fullPage: false });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(async () => (await page.locator(".sidebar-shell").boundingBox())?.x ?? 0).toBeLessThan(-300);
   const mobileRestore = page.getByRole("button", { name: "元に戻す" });
@@ -416,7 +423,7 @@ test("削除済みノートをゴミ箱で閲覧・復元・完全削除でき�
   expect(restoreBox!.x + restoreBox!.width).toBeLessThanOrEqual(390);
   expect(mobileOutlineBox!.x + mobileOutlineBox!.width).toBeLessThanOrEqual(390);
   await expect(page.getByLabel("Markdownプレビュー")).toBeVisible();
-  await page.screenshot({ path: "/tmp/aonote-trash-mobile.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-trash-mobile.png`, fullPage: false });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole("button", { name: "元に戻す" }).click();
   await expect(page.locator(".breadcrumb")).toContainText(`${folderName}`);
@@ -481,7 +488,7 @@ test("PCの目次を240pxで開閉し見出しへ移動できる", async ({ page
   expect(previewBox).not.toBeNull();
   expect(targetBox!.y).toBeGreaterThanOrEqual(previewBox!.y);
   expect(targetBox!.y).toBeLessThan(previewBox!.y + previewBox!.height);
-  await page.screenshot({ path: "/tmp/aonote-outline-heading-navigation.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-outline-heading-navigation.png`, fullPage: false });
   expect(browserIssues).toEqual([]);
 });
 
@@ -512,7 +519,7 @@ test("初期プレビューで表示名だけを表示し接続元はツール�
   await expect.poll(() => actor.evaluate((element) => getComputedStyle(element, "::after").content)).toContain("ChatGPT経由");
   await actor.focus();
   await expect(actor).toBeFocused();
-  await page.screenshot({ path: "/tmp/aonote-author-tooltip.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-author-tooltip.png`, fullPage: false });
   expect(browserIssues).toEqual([]);
 });
 
@@ -587,7 +594,7 @@ flowchart LR
   await expect(preview.locator("blockquote:not(.markdown-alert)")).toContainText("通常の引用です");
   const diagram = preview.getByLabel("Mermaid図");
   await expect(diagram.locator("svg")).toBeVisible({ timeout: 15_000 });
-  await page.screenshot({ path: "/tmp/aonote-markdown-alerts.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-markdown-alerts.png`, fullPage: false });
 
   await page.setViewportSize({ width: 1674, height: 868 });
   await page.getByRole("button", { name: "ワークスペースを隠す" }).click();
@@ -604,7 +611,7 @@ flowchart LR
   expect(previewDiagramBox!.width).toBeGreaterThan(alertBox!.width + 200);
   expect(previewSvgBox!.width).toBeGreaterThan(alertBox!.width);
   await diagram.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: "/tmp/aonote-mermaid-preview-wide.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-mermaid-preview-wide.png`, fullPage: false });
 
   await page.locator('button[title="分割"]').click();
   await expect(page.getByLabel("Markdownエディタ")).toBeVisible();
@@ -626,7 +633,7 @@ flowchart LR
   expect(diagramBox).not.toBeNull();
   expect(svgBox).not.toBeNull();
   expect(svgBox!.width).toBeLessThanOrEqual(diagramBox!.width);
-  await page.screenshot({ path: "/tmp/aonote-mermaid-mobile.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-mermaid-mobile.png`, fullPage: false });
   expect(browserIssues).toEqual([]);
 });
 
@@ -649,7 +656,7 @@ test("モバイルのハンバーガーメニューでワークスペースを�
   await expect(outline).toBeVisible();
   await expect(outline.getByText("作成者", { exact: true })).toBeVisible();
   await expect(outline.getByRole("button", { name: "目次を閉じる" })).toBeFocused();
-  await page.screenshot({ path: "/tmp/aonote-mobile-outline.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-mobile-outline.png`, fullPage: false });
   await outline.getByRole("button", { name: "目次を閉じる" }).click();
   await expect(outline).toBeHidden();
   expect(browserIssues).toEqual([]);
@@ -667,7 +674,7 @@ test("iPad幅でも右上から目次を開閉できる", async ({ page }) => {
   await expect(outline).toBeHidden();
   await outlineToggle.click();
   await expect(outline).toBeVisible();
-  await page.screenshot({ path: "/tmp/aonote-ipad-outline.png", fullPage: false });
+  await page.screenshot({ path: `${screenshotDir}/aonote-ipad-outline.png`, fullPage: false });
   await outline.getByRole("button", { name: "目次を閉じる" }).click();
   await expect(outline).toBeHidden();
   expect(browserIssues).toEqual([]);

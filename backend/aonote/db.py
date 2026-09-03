@@ -15,6 +15,7 @@ WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]")
 TITLE_RE = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 LEGACY_BRAND_RE = re.compile(r"aonote", re.IGNORECASE)
 _UNCHANGED = object()
+ENGLISH_WELCOME_SEED_MIGRATION = "english-welcome-seed-v1"
 
 AGENT_SKILL_CORE_LOOKUP = (
     "1. Use a user-provided workspace path directly; otherwise search or list notes "
@@ -287,6 +288,111 @@ For an existing note:
 """,
 }
 
+ENGLISH_MCP_PATH_GUIDANCE = """## Retrieve a note by path
+
+`get_note` accepts either a note ID or the workspace-relative path copied with the button in the browser breadcrumb.
+
+```json
+{"path": "Welcome/01-Welcome.md"}
+```
+
+For a note in Unfiled, pass only its filename, such as `memo.md`. Provide exactly one of `note_id` and `path`.
+
+"""
+ENGLISH_MCP_CREATION_GUIDANCE = """## Create folders and path-based notes
+
+`create_folder` accepts `name` and an optional `parent_id` to create a folder at the workspace root or below an existing folder.
+
+```json
+{"name": "Projects", "parent_id": null}
+```
+
+When `create_note` receives a `path`, it automatically creates missing parent folders within the configured maximum depth. You can also create a note with the existing `filename` and `folder_id` parameters.
+
+```json
+{"path": "Projects/test/note.md", "content": "# note"}
+```
+
+"""
+_AGENT_SKILL_TEMPLATE_MARKER = "````markdown\n"
+ENGLISH_AGENT_SKILL_TEMPLATE = (
+    SEED_NOTES["04-Agent Skill.md"]
+    .partition(_AGENT_SKILL_TEMPLATE_MARKER)[2]
+    .replace("未整理", "Unfiled")
+)
+ENGLISH_SEED_NOTES = {
+    "01-Welcome.md": """# Welcome to aonote
+
+aonote is a Markdown workspace where you and AI can grow the same knowledge together.
+
+## What you can do
+
+- Organize notes in a nested folder tree
+- Edit and preview Markdown with autosave
+- Render Markdown Alerts, Mermaid diagrams, Wiki links, and backlinks
+- Search titles, filenames, and content with SQLite FTS5
+- Review revision history and restore deleted notes from Trash
+- Collaborate safely with AI through an OAuth-protected MCP server
+- Switch the light/dark theme and display language in Settings
+
+Next, open [[02-MCP Integration|MCP Integration]] to learn how to use your notes from an AI client.
+""",
+    "02-MCP Integration.md": f"""# MCP Integration Setup
+
+## Overview
+
+Model Context Protocol (MCP) lets compatible clients such as ChatGPT, Hermes Agent, and OpenWebUI work with aonote.
+
+Set the connection URL to your publicly accessible HTTPS MCP endpoint.
+
+```text
+https://notes.example.com/mcp
+```
+
+## OAuth
+
+aonote uses an OAuth 2.1 authorization code flow with PKCE (S256). Compatible clients discover the OAuth metadata and can perform dynamic client registration when needed.
+
+- Enter a display name on the consent screen
+- Select read, search, and write scopes from those requested by the client
+- Do not grant the write scope to a read-only AI
+- MCP writes record both the display name and OAuth client name
+- Access tokens are short-lived and validated on every request
+
+{ENGLISH_MCP_PATH_GUIDANCE}{ENGLISH_MCP_CREATION_GUIDANCE}## Connect an MCP client
+
+Register the URL above in your client's MCP integration settings and start OAuth authentication. After connecting, the client can perform the following operations according to the granted scopes:
+
+- List notes, retrieve one by path, and run full-text searches
+- Create folders and notes
+- Update, rename, and move notes
+- Move notes to Trash
+
+Restore and permanent deletion operations are available only in the browser.
+
+To create a skill for an AI agent, use the template in [[04-Agent Skill Template|Agent Skill Template]].
+""",
+    "03-SQLite Full-Text Search.md": """# SQLite Full-Text Search
+
+aonote uses SQLite FTS5 for search.
+
+## How it works
+
+- A single FTS5 index stores note titles, filenames, and content
+- Queries of three or more characters use the trigram tokenizer for substring matching
+- Shorter queries fall back to a LIKE search
+- FTS5 results are ordered by relevance, while short-query results are ordered by modification time
+- The index is refreshed after creation, updates, and renames; notes in Trash are excluded
+
+For a personal note workspace, this simple and explainable search design is often a good fit.
+""",
+    "04-Agent Skill Template.md": f"""# aonote — Agent Skill Template
+
+This template teaches an AI agent how to operate aonote through MCP. Copy the following content into the agent's `SKILL.md` file.
+
+{_AGENT_SKILL_TEMPLATE_MARKER}{ENGLISH_AGENT_SKILL_TEMPLATE}""",
+}
+
 PRE_FOLDER_AGENT_SKILL_NOTE = (
     SEED_NOTES["04-Agent Skill.md"]
     .replace(AGENT_SKILL_CREATION_GUIDANCE, "")
@@ -473,6 +579,11 @@ class Database:
                     actor_name TEXT NOT NULL DEFAULT ''
                 );
 
+                CREATE TABLE IF NOT EXISTS app_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at INTEGER NOT NULL
+                );
+
                 CREATE VIRTUAL TABLE IF NOT EXISTS note_fts USING fts5(
                     note_id UNINDEXED,
                     title,
@@ -495,6 +606,8 @@ class Database:
             folder_count = connection.execute("SELECT COUNT(*) FROM folders").fetchone()[0]
             if note_count == 0 and folder_count == 0:
                 self._seed(connection)
+            else:
+                self._migrate_english_welcome_seed(connection)
 
     @staticmethod
     def _migrate_schema(connection: sqlite3.Connection) -> None:
@@ -571,14 +684,22 @@ class Database:
         if changed:
             self._resolve_all_links(connection)
 
-    def _seed(self, connection: sqlite3.Connection) -> None:
-        stamp = now_ts()
+    def _seed_folder(
+        self,
+        connection: sqlite3.Connection,
+        folder_name: str,
+        notes: Dict[str, str],
+        stamp: int,
+    ) -> str:
         folder_id = str(uuid4())
+        position = connection.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM folders WHERE parent_id IS NULL"
+        ).fetchone()[0]
         connection.execute(
-            "INSERT INTO folders VALUES (?, 'ようこそ', NULL, 0, ?, ?)",
-            (folder_id, stamp, stamp),
+            "INSERT INTO folders VALUES (?, ?, NULL, ?, ?, ?)",
+            (folder_id, folder_name, position, stamp, stamp),
         )
-        for index, (filename, content) in enumerate(SEED_NOTES.items()):
+        for index, (filename, content) in enumerate(notes.items()):
             note_id = str(uuid4())
             title = self.extract_title(content, filename)
             connection.execute(
@@ -589,7 +710,58 @@ class Database:
                 (note_id, folder_id, filename, title, content, stamp, stamp + index),
             )
             self._reindex(connection, note_id)
+        return folder_id
+
+    def _migrate_english_welcome_seed(
+        self, connection: sqlite3.Connection
+    ) -> None:
+        applied = connection.execute(
+            "SELECT 1 FROM app_migrations WHERE name = ?",
+            (ENGLISH_WELCOME_SEED_MIGRATION,),
+        ).fetchone()
+        if applied:
+            return
+        existing_english_folder = connection.execute(
+            "SELECT 1 FROM folders WHERE parent_id IS NULL AND name = 'Welcome'"
+        ).fetchone()
+        japanese_seed_folder = connection.execute(
+            """SELECT 1 FROM folders f
+               WHERE f.parent_id IS NULL AND f.name = 'ようこそ'
+                 AND EXISTS (
+                     SELECT 1 FROM notes n
+                     WHERE n.folder_id = f.id AND n.deleted_at IS NULL
+                       AND n.filename IN ('01-ようこそ.md', '02-MCP連携.md',
+                                          '03-SQLite全文検索.md', '04-Agent Skill.md')
+                 )"""
+        ).fetchone()
+        stamp = now_ts()
+        if not existing_english_folder and japanese_seed_folder:
+            self._seed_folder(
+                connection,
+                "Welcome",
+                ENGLISH_SEED_NOTES,
+                stamp,
+            )
+            self._resolve_all_links(connection)
+        connection.execute(
+            "INSERT INTO app_migrations(name, applied_at) VALUES (?, ?)",
+            (ENGLISH_WELCOME_SEED_MIGRATION, stamp),
+        )
+
+    def _seed(self, connection: sqlite3.Connection) -> None:
+        stamp = now_ts()
+        self._seed_folder(connection, "ようこそ", SEED_NOTES, stamp)
+        self._seed_folder(
+            connection,
+            "Welcome",
+            ENGLISH_SEED_NOTES,
+            stamp + len(SEED_NOTES),
+        )
         self._resolve_all_links(connection)
+        connection.execute(
+            "INSERT INTO app_migrations(name, applied_at) VALUES (?, ?)",
+            (ENGLISH_WELCOME_SEED_MIGRATION, stamp),
+        )
 
     @staticmethod
     def extract_title(content: str, filename: str) -> str:

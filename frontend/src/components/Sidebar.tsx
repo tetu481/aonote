@@ -1,9 +1,9 @@
 import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Palette, Pencil, Search, Settings2, Trash2 } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { folderContainsNote, flattenNotes } from "../folderUtils";
-import { useUiText } from "../LocaleContext";
+import { useLocale, useUiText } from "../LocaleContext";
 import type { FolderNode, NoteSummary, TrashedNoteSummary } from "../types";
-import { DEFAULT_WELCOME_FOLDER_NAME } from "../workspaceDefaults";
+import { WELCOME_DEFAULTS } from "../workspaceDefaults";
 
 export type SidebarMode = "files" | "recent" | "trash" | "settings";
 
@@ -19,8 +19,8 @@ type FolderProps = {
 };
 
 const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolderId, onSelect, onSelectFolder, onRename, onDelete, revealKey }: FolderProps) {
-  const uiText = useUiText();
-  const [open, setOpen] = useState(folder.name === DEFAULT_WELCOME_FOLDER_NAME);
+  const { locale, text: uiText } = useLocale();
+  const [open, setOpen] = useState(folder.name === WELCOME_DEFAULTS[locale].folderName);
   const containsSelection = folderContainsNote(folder, selectedId);
   useEffect(() => {
     if (containsSelection) setOpen(true);

@@ -9,6 +9,8 @@ import pytest
 
 from aonote.config import Settings
 from aonote.db import (
+    ENGLISH_SEED_NOTES,
+    ENGLISH_WELCOME_SEED_MIGRATION,
     PRE_FOLDER_AGENT_SKILL_NOTE,
     PRE_FOLDER_MCP_NOTE,
     PRE_REFRESH_MCP_NOTE,
@@ -92,20 +94,28 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         tree = await client.get("/api/tree")
         assert tree.status_code == 200
         folders = tree.json()
-        assert [folder["name"] for folder in folders] == ["ようこそ"]
-        assert [note["filename"] for note in folders[0]["notes"]] == [
+        assert [folder["name"] for folder in folders] == ["Welcome", "ようこそ"]
+        english_folder = next(folder for folder in folders if folder["name"] == "Welcome")
+        japanese_folder = next(folder for folder in folders if folder["name"] == "ようこそ")
+        assert [note["filename"] for note in english_folder["notes"]] == [
+            "01-Welcome.md",
+            "02-MCP Integration.md",
+            "03-SQLite Full-Text Search.md",
+            "04-Agent Skill Template.md",
+        ]
+        assert [note["filename"] for note in japanese_folder["notes"]] == [
             "01-ようこそ.md",
             "02-MCP連携.md",
             "03-SQLite全文検索.md",
             "04-Agent Skill.md",
         ]
-        sqlite_note = next(note for note in folders[0]["notes"] if note["filename"] == "03-SQLite全文検索.md")
+        sqlite_note = next(note for note in japanese_folder["notes"] if note["filename"] == "03-SQLite全文検索.md")
         sqlite_note_response = await client.get(f"/api/notes/{sqlite_note['id']}")
         assert sqlite_note_response.status_code == 200
         assert "Embeddingモデルを使わず" not in sqlite_note_response.json()["content"]
         assert "3文字以上の検索語" in sqlite_note_response.json()["content"]
         assert "ゴミ箱内のノートは検索対象から除外" in sqlite_note_response.json()["content"]
-        skill_note = next(note for note in folders[0]["notes"] if note["filename"] == "04-Agent Skill.md")
+        skill_note = next(note for note in japanese_folder["notes"] if note["filename"] == "04-Agent Skill.md")
         skill_note_response = await client.get(f"/api/notes/{skill_note['id']}")
         assert skill_note_response.status_code == 200
         assert "name: aonote-workspace" in skill_note_response.json()["content"]
@@ -119,7 +129,7 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert "`update_note`" in skill_note_response.json()["content"]
         assert "`delete_note`" in skill_note_response.json()["content"]
         assert "browser trash" in skill_note_response.json()["content"]
-        mcp_note = next(note for note in folders[0]["notes"] if note["filename"] == "02-MCP連携.md")
+        mcp_note = next(note for note in japanese_folder["notes"] if note["filename"] == "02-MCP連携.md")
         mcp_note_response = await client.get(f"/api/notes/{mcp_note['id']}")
         assert mcp_note_response.status_code == 200
         assert "Projects/test/note.md" in mcp_note_response.json()["content"]
@@ -127,7 +137,7 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert "表示名とOAuthクライアント名" in mcp_note_response.json()["content"]
         assert "ゴミ箱からの復元と完全削除はブラウザ" in mcp_note_response.json()["content"]
         assert any(link["filename"] == "01-ようこそ.md" for link in mcp_note_response.json()["backlinks"])
-        welcome_note = next(note for note in folders[0]["notes"] if note["filename"] == "01-ようこそ.md")
+        welcome_note = next(note for note in japanese_folder["notes"] if note["filename"] == "01-ようこそ.md")
         welcome_note_response = await client.get(f"/api/notes/{welcome_note['id']}")
         assert welcome_note_response.status_code == 200
         assert "Markdown Alerts、Mermaid" in welcome_note_response.json()["content"]
@@ -135,7 +145,34 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert welcome_note_response.json()["links"] == [
             {"target": "02-MCP連携", "id": mcp_note["id"]}
         ]
-        welcome_id = folders[0]["id"]
+        english_welcome = next(
+            note for note in english_folder["notes"] if note["filename"] == "01-Welcome.md"
+        )
+        english_mcp = next(
+            note for note in english_folder["notes"] if note["filename"] == "02-MCP Integration.md"
+        )
+        english_agent_skill = next(
+            note
+            for note in english_folder["notes"]
+            if note["filename"] == "04-Agent Skill Template.md"
+        )
+        for english_note in english_folder["notes"]:
+            english_note_response = await client.get(f"/api/notes/{english_note['id']}")
+            assert english_note_response.status_code == 200
+            assert english_note_response.json()["content"] == ENGLISH_SEED_NOTES[
+                english_note["filename"]
+            ]
+        english_welcome_response = await client.get(f"/api/notes/{english_welcome['id']}")
+        assert english_welcome_response.json()["links"] == [
+            {"target": "02-MCP Integration", "id": english_mcp["id"]}
+        ]
+        english_mcp_response = await client.get(f"/api/notes/{english_mcp['id']}")
+        assert {
+            "target": "04-Agent Skill Template",
+            "id": english_agent_skill["id"],
+        } in english_mcp_response.json()["links"]
+        assert "未整理" not in ENGLISH_SEED_NOTES["04-Agent Skill Template.md"]
+        welcome_id = japanese_folder["id"]
 
         created = await client.post(
             "/api/notes",
@@ -501,7 +538,7 @@ async def test_mcp_write_scope_is_enforced(tmp_path: Path):
             assert result["isError"] is True
             assert "notes:write" in result["content"][0]["text"]
         tree = (await client.get("/api/tree", headers=headers)).json()
-        assert [folder["name"] for folder in tree] == ["ようこそ"]
+        assert [folder["name"] for folder in tree] == ["Welcome", "ようこそ"]
 
 
 @pytest.mark.anyio
@@ -808,7 +845,7 @@ async def test_workspace_name_order_matches_api_and_mcp(tmp_path: Path):
 
         tree = (await client.get("/api/tree", headers=headers)).json()
         assert [folder["name"] for folder in tree] == [
-            "未整理", "Alpha", "beta", "Zulu", "ようこそ"
+            "未整理", "Alpha", "beta", "Welcome", "Zulu", "ようこそ"
         ]
         assert [note["filename"] for note in tree[0]["notes"]] == [
             "Alpha-unfiled.md", "Zulu-unfiled.md"
@@ -841,6 +878,7 @@ async def test_workspace_name_order_matches_api_and_mcp(tmp_path: Path):
             ("beta-child", 2),
             ("Zulu-child", 2),
             ("beta", 1),
+            ("Welcome", 1),
             ("Zulu", 1),
             ("ようこそ", 1),
         ]
@@ -1069,3 +1107,53 @@ def test_unmodified_previous_seed_notes_are_migrated(tmp_path: Path):
         assert migrated is not None
         assert migrated["content"] == SEED_NOTES[note["filename"]]
         assert migrated["version"] == note["version"] + 1
+
+
+def test_existing_default_workspace_receives_english_seed_once(tmp_path: Path):
+    database = Database(tmp_path / "english-seed-migration.sqlite3")
+    database.initialize()
+    with database.connect() as connection:
+        english_folder = connection.execute(
+            "SELECT id FROM folders WHERE parent_id IS NULL AND name = 'Welcome'"
+        ).fetchone()
+        note_ids = [
+            row["id"]
+            for row in connection.execute(
+                "SELECT id FROM notes WHERE folder_id = ?",
+                (english_folder["id"],),
+            )
+        ]
+        placeholders = ", ".join("?" for _ in note_ids)
+        connection.execute(
+            f"DELETE FROM note_fts WHERE note_id IN ({placeholders})",
+            note_ids,
+        )
+        connection.execute(
+            f"DELETE FROM notes WHERE id IN ({placeholders})",
+            note_ids,
+        )
+        connection.execute(
+            "DELETE FROM folders WHERE id = ?",
+            (english_folder["id"],),
+        )
+        connection.execute(
+            "DELETE FROM app_migrations WHERE name = ?",
+            (ENGLISH_WELCOME_SEED_MIGRATION,),
+        )
+
+    database.initialize()
+
+    tree = database.list_tree()
+    english_folder = next(folder for folder in tree if folder["name"] == "Welcome")
+    assert [note["filename"] for note in english_folder["notes"]] == list(
+        ENGLISH_SEED_NOTES
+    )
+    with database.connect() as connection:
+        assert connection.execute(
+            "SELECT 1 FROM app_migrations WHERE name = ?",
+            (ENGLISH_WELCOME_SEED_MIGRATION,),
+        ).fetchone()
+
+    database.delete_folder(english_folder["id"])
+    database.initialize()
+    assert all(folder["name"] != "Welcome" for folder in database.list_tree())

@@ -14,12 +14,12 @@ import { SettingsView } from "./components/SettingsView";
 import { Sidebar, type SidebarMode } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { TrashDocument } from "./components/TrashDocument";
-import { useUiText } from "./LocaleContext";
+import { useLocale } from "./LocaleContext";
 import { useAutosave } from "./hooks/useAutosave";
 import { flattenNotes, folderContainsFolder } from "./folderUtils";
 import { applyTheme, persistTheme, readStoredTheme, type Theme } from "./theme";
 import type { AppStatus, FolderNode, Note, NoteSummary, TrashedNote, TrashedNoteSummary } from "./types";
-import { DEFAULT_WELCOME_FOLDER_NAME, DEFAULT_WELCOME_NOTE_FILENAME } from "./workspaceDefaults";
+import { WELCOME_DEFAULTS } from "./workspaceDefaults";
 import "./styles.css";
 
 type ViewMode = "edit" | "split" | "preview";
@@ -31,7 +31,9 @@ function initialOutlineVisible() {
 }
 
 export default function App() {
-  const uiText = useUiText();
+  const { locale, text: uiText } = useLocale();
+  const initialLocale = useRef(locale).current;
+  const welcomeDefaults = WELCOME_DEFAULTS[initialLocale];
   const [tree, setTree] = useState<FolderNode[]>([]);
   const [recent, setRecent] = useState<NoteSummary[]>([]);
   const [trash, setTrash] = useState<TrashedNoteSummary[]>([]);
@@ -107,13 +109,14 @@ export default function App() {
       const [nextStatus, nextTree, nextRecent, nextTrash] = await Promise.all([api.status(), api.tree(), api.recent(), api.trash()]);
       setStatus(nextStatus); setTree(nextTree); setRecent(nextRecent); setTrash(nextTrash); setAuthRequired(false);
       const notes = flattenNotes(nextTree);
-      const preferred = notes.find((item) => item.filename === DEFAULT_WELCOME_NOTE_FILENAME) ?? notes[0];
+      const welcomeFolder = nextTree.find((folder) => folder.name === welcomeDefaults.folderName);
+      const preferred = welcomeFolder?.notes.find((item) => item.filename === welcomeDefaults.noteFilename) ?? notes[0];
       if (preferred) await selectById(preferred.id);
-      else setSelectedFolderId(nextTree.find((folder) => folder.name === DEFAULT_WELCOME_FOLDER_NAME)?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
+      else setSelectedFolderId(welcomeFolder?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) setAuthRequired(true);
     } finally { setLoading(false); }
-  }, [selectById]);
+  }, [selectById, welcomeDefaults.folderName, welcomeDefaults.noteFilename]);
 
   useEffect(() => { void loadApp(); }, [loadApp]);
   useEffect(() => {
