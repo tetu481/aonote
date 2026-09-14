@@ -103,6 +103,12 @@ In addition to the existing `filename` and `folder_id` parameters, `create_note`
 
 Notes deleted with the MCP `delete_note` tool also go to the trash. Restoration and permanent deletion are available only in the browser.
 
+### MCP Client Argument Validation Errors
+
+If `create_note` or `get_note` fails `oneOf` validation with “The tool was NOT invoked,” client-side schema conversion may be responsible. For compatibility, aonote exposes these tools without `oneOf` in their input schemas. Mutually exclusive arguments are still validated on the server.
+
+After updating and restarting aonote, refresh the MCP tool list in the client by reconnecting or restarting the client. For Docker deployments, rebuild the image from the updated source and recreate the container.
+
 ## Security Notes
 
 - Do not commit `.env`.

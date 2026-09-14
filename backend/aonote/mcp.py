@@ -37,6 +37,9 @@ def _tool(
     }
 
 
+# Keep alternative arguments in flat object schemas. Some client adapters drop
+# required-only oneOf branches, making every input fail client-side validation.
+# call_tool enforces the exclusive alternatives before accessing the database.
 TOOLS = [
     _tool(
         "list_notes",
@@ -45,17 +48,16 @@ TOOLS = [
     ),
     _tool(
         "get_note",
-        "Read one complete Markdown note by its aonote note ID or workspace-relative path.",
+        "Read one complete Markdown note. Provide exactly one of note_id or path, never both.",
         {
             "type": "object",
             "properties": {
-                "note_id": {"type": "string", "description": "Stable aonote note ID"},
+                "note_id": {"type": "string", "description": "Stable aonote note ID; omit when using path"},
                 "path": {
                     "type": "string",
-                    "description": "Case-sensitive workspace path such as ようこそ/01-ようこそ.md; use only the filename for 未整理",
+                    "description": "Case-sensitive workspace-relative path such as ようこそ/01-ようこそ.md; use only the filename for 未整理; omit when using note_id",
                 },
             },
-            "oneOf": [{"required": ["note_id"]}, {"required": ["path"]}],
         },
     ),
     _tool(
@@ -97,23 +99,25 @@ TOOLS = [
     ),
     _tool(
         "create_note",
-        "Create a Markdown note by filename and folder ID, or by a workspace path that automatically creates missing folders. Include a clear H1 heading in content.",
+        "Create a Markdown note. Provide exactly one of filename or path, never both. Use filename with an optional folder_id, or path to automatically create missing folders (omit folder_id). Include a clear H1 heading in content.",
         {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Filename ending in .md; use with folder_id",
+                    "description": "Filename ending in .md; optionally use with folder_id; omit when using path",
                 },
                 "path": {
                     "type": "string",
-                    "description": "Workspace path such as Projects/test/note.md; missing folders are created automatically",
+                    "description": "Workspace path such as Projects/test/note.md; missing folders are created automatically; omit filename and folder_id when using path",
                 },
                 "content": {"type": "string"},
-                "folder_id": {"type": ["string", "null"]},
+                "folder_id": {
+                    "type": ["string", "null"],
+                    "description": "Destination folder ID for filename mode; omit or use null for 未整理; omit when using path",
+                },
             },
             "required": ["content"],
-            "oneOf": [{"required": ["filename"]}, {"required": ["path"]}],
         },
         read_only=False,
     ),

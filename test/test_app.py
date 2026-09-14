@@ -364,10 +364,10 @@ async def test_oauth_discovery_pkce_and_mcp_tools(tmp_path: Path):
         }
         get_note_tool = next(tool for tool in tools if tool["name"] == "get_note")
         assert set(get_note_tool["inputSchema"]["properties"]) == {"note_id", "path"}
-        assert get_note_tool["inputSchema"]["oneOf"] == [
-            {"required": ["note_id"]},
-            {"required": ["path"]},
-        ]
+        # Keep the public schema flat: some tool adapters lose required-only
+        # oneOf branches, turning valid calls into impossible client validation.
+        assert "oneOf" not in get_note_tool["inputSchema"]
+        assert "exactly one" in get_note_tool["description"]
         create_folder_tool = next(
             tool for tool in tools if tool["name"] == "create_folder"
         )
@@ -376,10 +376,9 @@ async def test_oauth_discovery_pkce_and_mcp_tools(tmp_path: Path):
         assert set(create_note_tool["inputSchema"]["properties"]) == {
             "filename", "path", "content", "folder_id"
         }
-        assert create_note_tool["inputSchema"]["oneOf"] == [
-            {"required": ["filename"]},
-            {"required": ["path"]},
-        ]
+        assert "oneOf" not in create_note_tool["inputSchema"]
+        assert create_note_tool["inputSchema"]["required"] == ["content"]
+        assert "exactly one" in create_note_tool["description"]
 
         search_response = await client.post(
             "/mcp",
@@ -696,11 +695,74 @@ async def test_mcp_folder_and_path_note_creation(tmp_path: Path):
         )
         assert "folder_id cannot be used" in mixed_destination["content"][0]["text"]
 
+        notes_before = await call_tool("list_notes", {})
+        folders_before = await call_tool("list_folders", {})
+        for arguments, message in (
+            ({"content": "# Missing destination"}, "exactly one"),
+            (
+                {"filename": "both.md", "path": "未作成/both.md", "content": "# Both"},
+                "exactly one",
+            ),
+            ({"filename": "missing-content.md"}, "content is required"),
+            ({"path": "未作成/missing-content.md"}, "content is required"),
+        ):
+            invalid = await call_tool("create_note", arguments, error=True)
+            assert message in invalid["content"][0]["text"]
+        missing_lookup = await call_tool("get_note", {}, error=True)
+        assert "exactly one" in missing_lookup["content"][0]["text"]
+        assert await call_tool("list_notes", {}) == notes_before
+        assert await call_tool("list_folders", {}) == folders_before
+
         folders = await call_tool("list_folders", {})
         items = folders["items"]
         assert sum(item["name"] == "MCPルート" for item in items) == 1
         assert sum(item["name"] == "自動" for item in items) == 1
         assert not any(item["name"] in {"第四階層", "孤立", "ロールバック"} for item in items)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("destination", ["filename", "path"])
+@pytest.mark.parametrize("filename", ["OpenSSL-test.md", "脆弱性メモ-JVNVU#96558110.md"])
+async def test_mcp_create_note_long_content_round_trip(
+    tmp_path: Path, destination: str, filename: str
+):
+    async with make_client(tmp_path, bypass=False) as client:
+        token = await oauth_token(client)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        async def call_tool(name: str, arguments: dict):
+            response = await client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": name,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+            )
+            assert response.status_code == 200
+            result = response.json()["result"]
+            assert result["isError"] is False, result
+            return result["structuredContent"]
+
+        folder = await call_tool("create_folder", {"name": "01-memo"})
+        content = "# 検証用ノート\n\n" + "日本語の長文と **Markdown**、[リンク](https://example.com/)。\n" * 200
+        assert len(content.encode("utf-8")) > 11647
+        path = f"01-memo/{filename}"
+        arguments = {"content": content}
+        if destination == "filename":
+            arguments.update(filename=filename, folder_id=folder["id"])
+        else:
+            arguments["path"] = path
+        created = await call_tool("create_note", arguments)
+        assert created["path"] == path
+        assert created["content"] == content
+        assert created["version"] == 1
+        for lookup in ({"note_id": created["id"]}, {"path": path}):
+            fetched = await call_tool("get_note", lookup)
+            assert fetched["id"] == created["id"]
+            assert fetched["content"] == content
 
 
 @pytest.mark.anyio
