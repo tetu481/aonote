@@ -243,6 +243,9 @@ kbd { font-family: var(--mono); font-size: 11px; border: 0; color: #708299; back
 .sidebar-foot { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; color: var(--muted); border-top: 1px solid var(--border); font-size: 11px; }
 
 .document-shell { min-width: 0; flex: 1; display: flex; flex-direction: column; position: relative; background: var(--surface-strong); }
+.document-error { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--border); color: var(--danger); background: var(--surface-strong); font-size: 13px; }
+.document-error span { flex: 1; min-width: 200px; }
+.document-error button { flex-shrink: 0; padding: 6px 10px; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; }
 .document-bar { height: 54px; flex: 0 0 54px; display: flex; align-items: center; padding: 0 13px 0 18px; gap: 14px; border-bottom: 1px solid var(--border); background: #fbfdff; }
 .breadcrumb-group { min-width: 0; flex: 1; display: flex; align-items: center; gap: 4px; }
 .breadcrumb { min-width: 0; flex: 0 1 auto; display: flex; align-items: center; gap: 10px; overflow: hidden; font-size: 12px; }

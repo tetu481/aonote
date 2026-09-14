@@ -53,6 +53,7 @@ In production, expose the app over HTTPS through Caddy, nginx, or a similar reve
 
 ## Reliability and Monitoring
 
+- Switching notes or replacing editor content waits for autosave to finish. If saving fails, the operation stops and your draft stays on screen so you can retry saving. For update conflicts, copy your unsaved text before reloading the page, then merge it with the server-side changes. Unsaved drafts do not persist after the browser is closed.
 - Consuming an OAuth authorization code or refresh token and storing the new tokens commit in one transaction. Storage failures roll back the entire exchange, and concurrent exchanges cannot reuse the same code or token.
 - Note updates acquire a writer lock before checking the version, then update content, revision history, and the search index together. On a version conflict, read the note again and reapply the change. Browser and MCP database operations run in worker threads so database waits do not block the event loop.
 - `/healthz` checks liveness. `/readyz` checks database reads and writer-lock acquisition, frontend deployment, and free space on the database filesystem, returning HTTP 503 on failure. It does not replace a full database integrity check or backups.

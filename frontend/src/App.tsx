@@ -64,6 +64,11 @@ export default function App() {
   const [revealTree, setRevealTree] = useState(0);
   const [authRequired, setAuthRequired] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [documentBusy, setDocumentBusy] = useState(false);
+  const [documentError, setDocumentError] = useState("");
+  const documentQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingDocumentActions = useRef(0);
+  const saveErrorTextRef = useRef(uiText.app.errors);
   const copyResetTimer = useRef<number | null>(null);
   const sidebarModeRef = useRef<SidebarMode>("files");
   const navigationRevisionRef = useRef(0);
@@ -87,21 +92,71 @@ export default function App() {
     return nextTrash;
   }, []);
 
+  const onSaved = useCallback((updated: Note) => {
+    setNote((current) => current?.id === updated.id ? updated : current);
+    setDocumentError("");
+    // A navigation refresh failure is not a failed document save.
+    void refreshNavigation().catch(() => {});
+  }, [refreshNavigation]);
+  const { state: saveState, edit: editAutosave, flush: flushAutosave, reset: resetAutosave } = useAutosave(onSaved);
+
+  const showNote = useCallback((selected: Note | null) => {
+    resetAutosave(selected);
+    setNote(selected);
+    setContent(selected?.content ?? "");
+  }, [resetAutosave]);
+
+  useEffect(() => { saveErrorTextRef.current = uiText.app.errors; }, [uiText]);
+
+  // Every operation that replaces the editor first drains autosave. Serialize
+  // these operations and lock input until their reads/writes finish as well.
+  const withSavedNote = useCallback((action: (saved: Note | null) => Promise<void>) => {
+    pendingDocumentActions.current += 1;
+    setDocumentBusy(true);
+    const task = documentQueueRef.current.then(async () => {
+      setDocumentError("");
+      let saved: Note | null;
+      try { saved = await flushAutosave(); }
+      catch (error) {
+        throw new Error(error instanceof ApiError && error.status === 409
+          ? saveErrorTextRef.current.saveConflict
+          : saveErrorTextRef.current.unsavedChanges);
+      }
+      await action(saved);
+    }).catch((error: unknown) => {
+      setDocumentError(error instanceof Error ? error.message : String(error));
+      throw error;
+    }).finally(() => {
+      pendingDocumentActions.current -= 1;
+      setDocumentBusy(pendingDocumentActions.current > 0);
+    });
+    documentQueueRef.current = task.catch(() => {});
+    return task;
+  }, [flushAutosave]);
+
+  const changeContent = (next: string) => {
+    if (pendingDocumentActions.current) return;
+    editAutosave(next);
+    setContent(next);
+  };
+
   const selectById = useCallback(async (id: string) => {
     updateSidebarMode("files");
     setDesktopSidebar(true);
     setMobileSidebar(false);
     setOutlineOpen(false);
     const navigationRevision = ++navigationRevisionRef.current;
-    const selected = await api.note(id);
-    if (navigationRevision !== navigationRevisionRef.current) return;
-    setNote(selected);
-    setTrashedNote(null);
-    setRestoreError("");
-    setContent(selected.content);
-    setSelectedFolderId(selected.folder_id ?? "unfiled");
-    setRevealTree((value) => value + 1);
-  }, [updateSidebarMode]);
+    await withSavedNote(async () => {
+      if (navigationRevision !== navigationRevisionRef.current) return;
+      const selected = await api.note(id);
+      if (navigationRevision !== navigationRevisionRef.current) return;
+      showNote(selected);
+      setTrashedNote(null);
+      setRestoreError("");
+      setSelectedFolderId(selected.folder_id ?? "unfiled");
+      setRevealTree((value) => value + 1);
+    }).catch(() => {}); // withSavedNote displays failures without losing the draft.
+  }, [updateSidebarMode, withSavedNote, showNote]);
 
   const loadApp = useCallback(async () => {
     setLoading(true);
@@ -141,12 +196,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  const onSaved = useCallback((updated: Note) => {
-    setNote(updated);
-    void refreshNavigation();
-  }, [refreshNavigation]);
-  const { state: saveState, reset: resetAutosave } = useAutosave(note, content, onSaved);
 
   const cursor = useMemo(() => {
     const lines = content.split("\n");
@@ -192,12 +241,14 @@ export default function App() {
     }
   };
   const createNote = async (filename: string, folderId: string | null) => {
-    const title = filename.replace(/\.md$/i, "");
-    const created = await api.createNote({ filename, folder_id: folderId, content: `# ${title}\n\n` });
-    await refreshNavigation();
-    setTrashedNote(null); setNote(created); setContent(created.content);
-    setSelectedFolderId(created.folder_id ?? "unfiled");
-    updateSidebarMode("files"); setDesktopSidebar(true);
+    await withSavedNote(async () => {
+      const title = filename.replace(/\.md$/i, "");
+      const created = await api.createNote({ filename, folder_id: folderId, content: `# ${title}\n\n` });
+      await refreshNavigation();
+      setTrashedNote(null); showNote(created);
+      setSelectedFolderId(created.folder_id ?? "unfiled");
+      updateSidebarMode("files"); setDesktopSidebar(true);
+    });
   };
   const createFolder = async (name: string, parentId: string | null) => {
     await api.createFolder({ name, parent_id: parentId });
@@ -207,44 +258,55 @@ export default function App() {
   };
   const renameSelectedFolder = async (name: string) => {
     if (!folderToRename) return;
-    await api.renameFolder(folderToRename.id, name);
-    const [, selected] = await Promise.all([
-      refreshNavigation(),
-      note ? api.note(note.id) : Promise.resolve(null),
-    ]);
-    if (selected) { setNote(selected); setContent(selected.content); resetAutosave(selected); }
-    setRevealTree((value) => value + 1);
+    const folderId = folderToRename.id;
+    await withSavedNote(async (saved) => {
+      await api.renameFolder(folderId, name);
+      const [, selected] = await Promise.all([
+        refreshNavigation(),
+        saved ? api.note(saved.id) : Promise.resolve(null),
+      ]);
+      if (selected) showNote(selected);
+      setRevealTree((value) => value + 1);
+    });
   };
   const deleteSelectedFolder = async (folder: FolderNode) => {
     const noteCount = flattenNotes([folder]).length;
     const removesSelectedFolder = folderContainsFolder(folder, selectedFolderId);
     const message = uiText.app.deleteFolderConfirmation(folder.name, noteCount);
     if (!window.confirm(message)) return;
-    await api.deleteFolder(folder.id);
-    const [, selected] = await Promise.all([
-      refreshNavigation(),
-      note ? api.note(note.id) : Promise.resolve(null),
-    ]);
-    if (selected) { setNote(selected); setContent(selected.content); resetAutosave(selected); }
-    if (removesSelectedFolder) setSelectedFolderId(selected?.folder_id ?? "unfiled");
-    setRevealTree((value) => value + 1);
+    await withSavedNote(async (saved) => {
+      await api.deleteFolder(folder.id);
+      const [, selected] = await Promise.all([
+        refreshNavigation(),
+        saved ? api.note(saved.id) : Promise.resolve(null),
+      ]);
+      if (selected) showNote(selected);
+      if (removesSelectedFolder) setSelectedFolderId(selected?.folder_id ?? "unfiled");
+      setRevealTree((value) => value + 1);
+    }).catch(() => {});
   };
   const organizeCurrent = async (filename: string, folderId: string | null) => {
     if (!note) return;
-    const updated = await api.relocateNote(note.id, { filename, folder_id: folderId, version: note.version });
-    setNote(updated); setContent(updated.content); resetAutosave(updated);
-    setSelectedFolderId(updated.folder_id ?? "unfiled");
-    await refreshNavigation();
-    updateSidebarMode("files"); setDesktopSidebar(true);
+    const noteId = note.id;
+    await withSavedNote(async (saved) => {
+      if (!saved || saved.id !== noteId) return;
+      const updated = await api.relocateNote(saved.id, { filename, folder_id: folderId, version: saved.version });
+      showNote(updated);
+      setSelectedFolderId(updated.folder_id ?? "unfiled");
+      await refreshNavigation();
+      updateSidebarMode("files"); setDesktopSidebar(true);
+    });
   };
   const reloadWorkspace = async () => {
     setReloadBusy(true);
     try {
-      const [, selected] = await Promise.all([
-        refreshNavigation(),
-        note ? api.note(note.id) : Promise.resolve(null),
-      ]);
-      if (selected) { setNote(selected); setContent(selected.content); resetAutosave(selected); }
+      await withSavedNote(async (saved) => {
+        const [, selected] = await Promise.all([
+          refreshNavigation(),
+          saved ? api.note(saved.id) : Promise.resolve(null),
+        ]);
+        if (selected) showNote(selected);
+      }).catch(() => {});
     } finally { setReloadBusy(false); }
   };
   const toggleWorkspace = () => {
@@ -253,21 +315,27 @@ export default function App() {
   };
   const deleteCurrent = async () => {
     if (!note || !window.confirm(uiText.app.deleteNoteConfirmation(note.title))) return;
-    await api.deleteNote(note.id);
-    const [nextTree] = await Promise.all([refreshNavigation(), refreshTrash()]);
-    const next = flattenNotes(nextTree)[0];
-    if (next && sidebarModeRef.current === "files") void selectById(next.id);
-    else if (!next) { setNote(null); setContent(""); }
+    const noteId = note.id;
+    await withSavedNote(async (saved) => {
+      if (!saved || saved.id !== noteId) return;
+      await api.deleteNote(noteId);
+      showNote(null);
+      const [nextTree] = await Promise.all([refreshNavigation(), refreshTrash()]);
+      const next = flattenNotes(nextTree)[0];
+      if (next && sidebarModeRef.current === "files") void selectById(next.id);
+    }).catch(() => {});
   };
   const restoreCurrent = async () => {
     if (!trashedNote) return;
     setRestoreBusy(true); setRestoreError("");
     try {
-      const restored = await api.restoreNote(trashedNote.id);
-      await Promise.all([refreshNavigation(), refreshTrash()]);
-      setTrashedNote(null); setNote(restored); setContent(restored.content); resetAutosave(restored);
-      setSelectedFolderId(restored.folder_id ?? "unfiled");
-      updateSidebarMode("files"); setDesktopSidebar(true); setRevealTree((value) => value + 1);
+      await withSavedNote(async () => {
+        const restored = await api.restoreNote(trashedNote.id);
+        await Promise.all([refreshNavigation(), refreshTrash()]);
+        setTrashedNote(null); showNote(restored);
+        setSelectedFolderId(restored.folder_id ?? "unfiled");
+        updateSidebarMode("files"); setDesktopSidebar(true); setRevealTree((value) => value + 1);
+      });
     } catch (error) {
       setRestoreError(error instanceof Error ? error.message : uiText.app.errors.restoreNote);
     } finally { setRestoreBusy(false); }
@@ -316,6 +384,7 @@ export default function App() {
         <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
         {mobileSidebar ? <button className="sidebar-scrim" aria-label={uiText.app.sidebarClose} onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
+          {documentError ? <div className="document-error" role="alert"><span>{documentError}</span>{saveState === "error" || saveState === "conflict" ? <button onClick={() => void withSavedNote(async () => {}).catch(() => {})} disabled={documentBusy}>{uiText.app.retrySave}</button> : null}</div> : null}
           {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
             <header className="document-bar">
               <div className="breadcrumb-group">
@@ -323,19 +392,19 @@ export default function App() {
                 <button className={`icon-button copy-path-button ${pathCopied ? "copied" : ""}`} onClick={() => void copyCurrentPath()} aria-label={pathCopied ? uiText.app.toolbar.copiedPath : uiText.app.toolbar.copyPath} title={pathCopied ? uiText.app.toolbar.copied : notePath}>{pathCopied ? <Check size={16} /> : <Copy size={16} />}</button>
               </div>
               <div className={`save-state ${saveState}`}><i />{uiText.app.saveState[saveState]}</div>
-              <button className={`icon-button reload-button ${reloadBusy ? "spinning" : ""}`} onClick={() => void reloadWorkspace()} disabled={reloadBusy || saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.reload} title={uiText.app.toolbar.reload}><RefreshCw size={17} /></button>
-              <button className="icon-button organize-button" onClick={() => setOrganizeOpen(true)} disabled={saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.organize} title={uiText.app.toolbar.organizeShort}><PencilLine size={17} /></button>
+              <button className={`icon-button reload-button ${reloadBusy ? "spinning" : ""}`} onClick={() => void reloadWorkspace()} disabled={documentBusy || reloadBusy || saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.reload} title={uiText.app.toolbar.reload}><RefreshCw size={17} /></button>
+              <button className="icon-button organize-button" onClick={() => setOrganizeOpen(true)} disabled={documentBusy || saveState === "dirty" || saveState === "saving"} aria-label={uiText.app.toolbar.organize} title={uiText.app.toolbar.organizeShort}><PencilLine size={17} /></button>
               <div className="view-switch" aria-label={uiText.app.toolbar.viewMode}>
                 <button className={view === "edit" ? "active" : ""} onClick={() => setView("edit")} title={uiText.app.toolbar.edit}><FilePenLine size={17} /></button>
                 <button className={view === "split" ? "active" : ""} onClick={() => setView("split")} title={uiText.app.toolbar.split}><Columns2 size={17} /></button>
                 <button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")} title={uiText.app.toolbar.preview}><Eye size={17} /></button>
               </div>
-              <button className="icon-button delete-button" onClick={deleteCurrent} aria-label={uiText.app.toolbar.deleteNote}><Trash2 size={17} /></button>
+              <button className="icon-button delete-button" onClick={deleteCurrent} disabled={documentBusy} aria-label={uiText.app.toolbar.deleteNote}><Trash2 size={17} /></button>
               <button className={`icon-button outline-toggle ${outlineExpanded ? "active" : ""}`} onClick={toggleOutline} aria-label={outlineExpanded ? uiText.app.toolbar.closeOutline : uiText.app.toolbar.showOutline} aria-expanded={outlineExpanded} aria-controls="note-outline" title={uiText.app.toolbar.outline}><ListTree size={18} /></button>
             </header>
             <div className="mobile-tabs"><button className={view !== "preview" ? "active" : ""} onClick={() => setView("edit")}>{uiText.app.toolbar.edit}</button><button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>{uiText.app.toolbar.preview}</button></div>
             <div className={`document-workarea view-${view} ${outlineVisible ? "" : "outline-hidden"}`} id="preview">
-              {view !== "preview" ? <EditorPane content={content} onChange={setContent} /> : null}
+              {view !== "preview" ? <EditorPane content={content} onChange={changeContent} readOnly={documentBusy} /> : null}
               {view !== "edit" ? <PreviewPane content={content} links={note.links} onWikilink={selectById} /> : null}
               {outlineOpen ? <button className="outline-scrim" aria-label={uiText.app.toolbar.closeOutlineOutside} onClick={() => setOutlineOpen(false)} /> : null}
               <Outline note={{ ...note, content }} drawerOpen={outlineOpen} desktopVisible={outlineVisible} onClose={() => setOutlineOpen(false)} onBacklink={(id) => void selectById(id)} />

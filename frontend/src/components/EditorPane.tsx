@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { useUiText } from "../LocaleContext";
 
-type Props = { content: string; onChange: (content: string) => void };
+type Props = { content: string; onChange: (content: string) => void; readOnly?: boolean };
 
-export function EditorPane({ content, onChange }: Props) {
+export function EditorPane({ content, onChange, readOnly = false }: Props) {
   const uiText = useUiText();
   const lines = useMemo(() => content.split("\n"), [content]);
   const lineRef = useRef<HTMLDivElement>(null);
@@ -20,6 +20,7 @@ export function EditorPane({ content, onChange }: Props) {
       </div>
       <textarea
         value={content}
+        readOnly={readOnly}
         onChange={(event) => { onChange(event.target.value); updateCursor(event.target); }}
         onClick={(event) => updateCursor(event.currentTarget)}
         onKeyUp={(event) => updateCursor(event.currentTarget)}
