@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "./api";
 import { EditorPane } from "./components/EditorPane";
 import { LoginView } from "./components/LoginView";
+import { NameTooltip } from "./components/NameTooltip";
 import { NewNoteDialog } from "./components/NewNoteDialog";
 import { NewFolderDialog } from "./components/NewFolderDialog";
 import { OrganizeNoteDialog } from "./components/OrganizeNoteDialog";
@@ -379,6 +380,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <NameTooltip />
       <TopBar onMenu={toggleWorkspace} onSearch={() => setSearchOpen(true)} onCreate={() => setNewOpen(true)} onCreateFolder={() => setNewFolderOpen(true)} sidebarOpen={window.matchMedia("(max-width: 900px)").matches ? mobileSidebar : desktopSidebar} />
       <div className="workspace">
         <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
@@ -388,7 +390,7 @@ export default function App() {
           {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
             <header className="document-bar">
               <div className="breadcrumb-group">
-                <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id}>{folder.name}<b>/</b></span>) : <span>{uiText.common.unfiled}<b>/</b></span>}<strong>{note.filename}</strong></div>
+                <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id} data-full-name={folder.name} tabIndex={0}>{folder.name}<b>/</b></span>) : <span>{uiText.common.unfiled}<b>/</b></span>}<strong data-full-name={note.filename} tabIndex={0}>{note.filename}</strong></div>
                 <button className={`icon-button copy-path-button ${pathCopied ? "copied" : ""}`} onClick={() => void copyCurrentPath()} aria-label={pathCopied ? uiText.app.toolbar.copiedPath : uiText.app.toolbar.copyPath} title={pathCopied ? uiText.app.toolbar.copied : notePath}>{pathCopied ? <Check size={16} /> : <Copy size={16} />}</button>
               </div>
               <div className={`save-state ${saveState}`}><i />{uiText.app.saveState[saveState]}</div>

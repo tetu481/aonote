@@ -22,7 +22,7 @@ export function TrashDocument({ note, compactOutline, outlineDrawerOpen, outline
 
   return <>
     <header className="document-bar trash-document-bar">
-      <div className="breadcrumb"><span>{uiText.trashDocument.breadcrumb}<b>/</b></span><strong title={note.deleted_path}>{note.deleted_path}</strong></div>
+      <div className="breadcrumb"><span>{uiText.trashDocument.breadcrumb}<b>/</b></span><strong data-full-name={note.deleted_path} tabIndex={0}>{note.deleted_path}</strong></div>
       <span className="readonly-state">{uiText.trashDocument.readOnly}</span>
       <button className="secondary-button restore-note-button" onClick={onRestore} disabled={restoreBusy} aria-label={restoreBusy ? uiText.trashDocument.restoring : uiText.trashDocument.restore}><RotateCcw size={16} /><span>{restoreBusy ? uiText.trashDocument.restoringProgress : uiText.trashDocument.restore}</span></button>
       <button className={`icon-button outline-toggle ${outlineExpanded ? "active" : ""}`} onClick={onToggleOutline} aria-label={outlineExpanded ? uiText.app.toolbar.closeOutline : uiText.app.toolbar.showOutline} aria-expanded={outlineExpanded} aria-controls="note-outline" title={uiText.app.toolbar.outline}><ListTree size={18} /></button>

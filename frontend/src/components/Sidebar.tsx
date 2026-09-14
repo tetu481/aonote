@@ -31,7 +31,7 @@ const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolder
         <button className="folder-toggle" onClick={() => { onSelectFolder(folder.id); setOpen((value) => !value); }} aria-expanded={open}>
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
           {open ? <FolderOpen size={17} /> : <Folder size={17} />}
-          <span>{folder.name}</span>
+          <span data-full-name={folder.name}>{folder.name}</span>
         </button>
         {folder.id !== "unfiled" ? <div className="folder-actions">
           <button onClick={() => onRename(folder)} aria-label={uiText.sidebar.renameFolder(folder.name)} title={uiText.sidebar.rename}><Pencil size={13} /></button>
@@ -48,7 +48,7 @@ const FolderTree = memo(function FolderTree({ folder, selectedId, selectedFolder
               onClick={() => onSelect(note)}
             >
               <FileText size={16} />
-              <span>{note.filename}</span>
+              <span data-full-name={note.filename}>{note.filename}</span>
             </button>
           ))}
         </div>
@@ -112,11 +112,11 @@ export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, sele
             <FolderTree key={folder.id} folder={folder} selectedId={selectedId} selectedFolderId={selectedFolderId} revealKey={revealKey} onSelect={onSelect} onSelectFolder={onSelectFolder} onRename={onRenameFolder} onDelete={onDeleteFolder} />
           )) : mode === "recent" ? recent.map((note) => (
             <button key={note.id} className={`recent-row ${selectedId === note.id ? "selected" : ""}`} onClick={() => onSelect(note)}>
-              <FileText size={16} /><span><strong>{note.title}</strong><small>{note.filename}</small></span>
+              <FileText size={16} /><span><strong data-full-name={note.title}>{note.title}</strong><small data-full-name={note.filename}>{note.filename}</small></span>
             </button>
           )) : mode === "trash" && trash.length ? trash.map((item) => (
             <button key={item.id} className={`trash-row ${selectedTrashId === item.id ? "selected" : ""}`} onClick={() => onSelectTrash(item)}>
-              <Trash2 size={16} /><span><strong>{item.filename}</strong><small title={item.deleted_path}>{item.deleted_path}</small><time>{deletedAtFormatter.format(new Date(item.deleted_at * 1000))}</time></span>
+              <Trash2 size={16} /><span><strong data-full-name={item.filename}>{item.filename}</strong><small data-full-name={item.deleted_path}>{item.deleted_path}</small><time>{deletedAtFormatter.format(new Date(item.deleted_at * 1000))}</time></span>
             </button>
           )) : mode === "trash" ? <div className="trash-empty"><Trash2 size={22} /><span>{uiText.sidebar.emptyTrash}</span></div> : <button className="settings-nav-row selected" onClick={() => onMode("settings")}><Palette size={17} /><span><strong>{uiText.sidebar.appearance}</strong><small>{uiText.sidebar.appearanceDescription}</small></span></button>}
         </div>

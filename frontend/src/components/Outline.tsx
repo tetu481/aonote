@@ -43,7 +43,7 @@ export function Outline({ note, drawerOpen, desktopVisible, onClose, onBacklink 
         }}>{heading.label}</a>;
       })}</nav>
       {note.backlinks.length ? (
-        <div className="backlinks"><h2><Link2 size={14} />{uiText.outline.backlinks}</h2>{note.backlinks.map((item) => <button key={item.id} onClick={() => { onClose(); onBacklink(item.id); }}>{item.title}</button>)}</div>
+        <div className="backlinks"><h2><Link2 size={14} />{uiText.outline.backlinks}</h2>{note.backlinks.map((item) => <button key={item.id} data-full-name={item.title} onClick={() => { onClose(); onBacklink(item.id); }}>{item.title}</button>)}</div>
       ) : null}
       <dl className="note-metadata">
         <div><dt>{uiText.outline.createdBy}</dt><dd><ActorName name={note.created_by} via={note.created_via} /></dd></div>

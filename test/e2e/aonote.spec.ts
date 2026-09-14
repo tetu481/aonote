@@ -90,7 +90,7 @@ test("ワークスペース機能をデスクトップで操作できる", async
     await page.getByRole("button", { name: "新規フォルダ" }).click();
     const dialog = page.locator(".new-note-dialog");
     await expect(dialog.getByRole("heading", { name: "新しいフォルダ" })).toBeVisible();
-    await dialog.getByLabel("フォルダ名").fill(name);
+    await dialog.getByLabel("フォルダ名", { exact: true }).fill(name);
     if (parent) await selectOptionContaining(page, ".new-note-dialog select", parent);
     else await dialog.getByLabel("作成先").selectOption("");
     await dialog.getByRole("button", { name: "作成", exact: true }).click();
