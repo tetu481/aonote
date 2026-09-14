@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+from time import perf_counter
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from .config import Settings
 from .db import Database, VersionConflict
 from .oauth import validate_oauth_token
+from .observability import log_event, storage_error_code
 from .security import bearer_token
 
 
@@ -203,7 +207,10 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
         authorization: Optional[str] = Header(default=None),
     ) -> Response:
         token = bearer_token(authorization)
-        principal = validate_oauth_token(db, token or "", settings.mcp_resource) if token else None
+        principal = (
+            await run_in_threadpool(validate_oauth_token, db, token, settings.mcp_resource)
+            if token else None
+        )
         if not principal:
             return challenge()
         try:
@@ -213,16 +220,20 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
                 {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
                 status_code=400,
             )
-        if isinstance(message, list):
+        return await run_in_threadpool(process_messages, message, principal)
+
+    def process_messages(message: Any, principal: Dict[str, Any]) -> Response:
+        if isinstance(message, list) and message:
             responses = [handle_message(item, principal) for item in message]
-            return JSONResponse([item for item in responses if item is not None])
+            responses = [item for item in responses if item is not None]
+            return JSONResponse(responses) if responses else Response(status_code=202)
         result = handle_message(message, principal)
         if result is None:
             return Response(status_code=202)
         return JSONResponse(result)
 
     @router.get("/mcp")
-    async def mcp_get(authorization: Optional[str] = Header(default=None)) -> Response:
+    def mcp_get(authorization: Optional[str] = Header(default=None)) -> Response:
         token = bearer_token(authorization)
         if not token or not validate_oauth_token(db, token, settings.mcp_resource):
             return challenge()
@@ -236,13 +247,15 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
     async def mcp_delete() -> Response:
         return Response(status_code=204)
 
-    def handle_message(message: Dict[str, Any], principal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def handle_message(message: Any, principal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(message, dict):
+            return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
         request_id = message.get("id")
         method = message.get("method")
-        if method and method.startswith("notifications/"):
-            return None
-        if message.get("jsonrpc") != "2.0" or not method:
+        if message.get("jsonrpc") != "2.0" or not isinstance(method, str) or not method:
             return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "Invalid Request"}}
+        if method.startswith("notifications/"):
+            return None
         if method == "initialize":
             return {
                 "jsonrpc": "2.0",
@@ -260,15 +273,42 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
             return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
         if method == "tools/call":
             params = message.get("params") or {}
+            if not isinstance(params, dict):
+                return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
             name = params.get("name")
-            arguments = params.get("arguments") or {}
+            arguments = params.get("arguments", {})
+            if not isinstance(name, str) or not isinstance(arguments, dict):
+                return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Invalid params"}}
+            tool_name = name if name in {tool["name"] for tool in TOOLS} else "unknown"
+            started = perf_counter()
+            reason = "ok"
             try:
                 value = call_tool(name, arguments, principal)
                 return {"jsonrpc": "2.0", "id": request_id, "result": _result(value)}
             except PermissionError as exc:
+                reason = "permission_denied"
                 return {"jsonrpc": "2.0", "id": request_id, "result": _result({"error": str(exc)}, True)}
-            except (ValueError, sqlite3.IntegrityError, VersionConflict) as exc:
+            except VersionConflict as exc:
+                reason = "version_conflict"
+                return {"jsonrpc": "2.0", "id": request_id, "result": _result({"error": str(exc), "code": reason, "current_version": exc.current_version}, True)}
+            except sqlite3.IntegrityError as exc:
+                reason = "integrity_conflict"
                 return {"jsonrpc": "2.0", "id": request_id, "result": _result({"error": str(exc)}, True)}
+            except sqlite3.Error as exc:
+                reason = storage_error_code(exc)
+                return {"jsonrpc": "2.0", "id": request_id, "result": _result({"error": "Database temporarily unavailable", "code": reason}, True)}
+            except (ValueError, TypeError, KeyError) as exc:
+                reason = "invalid_arguments"
+                return {"jsonrpc": "2.0", "id": request_id, "result": _result({"error": str(exc)}, True)}
+            except Exception:
+                reason = "internal_error"
+                return {"jsonrpc": "2.0", "id": request_id, "result": _result({"error": "Internal server error"}, True)}
+            finally:
+                log_event(
+                    "mcp_tool", tool=tool_name, outcome="success" if reason == "ok" else "error",
+                    reason=reason, duration_ms=round((perf_counter() - started) * 1000, 2),
+                    level=logging.INFO if reason == "ok" else logging.WARNING,
+                )
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
 
     def require_scope(principal: Dict[str, Any], scope: str) -> None:
@@ -347,14 +387,10 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
             return note
         if name == "rename_note":
             require_scope(principal, "notes:write")
-            current = db.get_note(str(arguments.get("note_id", "")))
-            if not current:
-                raise ValueError("Note not found")
-            note = db.relocate_note(
-                current["id"],
-                str(arguments.get("filename", "")),
-                current["folder_id"],
-                int(arguments.get("version", 0)),
+            note = db.update_note(
+                str(arguments.get("note_id", "")),
+                filename=str(arguments.get("filename", "")),
+                expected_version=int(arguments.get("version", 0)),
                 **actor,
             )
             if not note:
@@ -362,14 +398,10 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
             return note
         if name == "move_note":
             require_scope(principal, "notes:write")
-            current = db.get_note(str(arguments.get("note_id", "")))
-            if not current:
-                raise ValueError("Note not found")
-            note = db.relocate_note(
-                current["id"],
-                current["filename"],
-                arguments.get("folder_id"),
-                int(arguments.get("version", 0)),
+            note = db.update_note(
+                str(arguments.get("note_id", "")),
+                folder_id=arguments.get("folder_id"),
+                expected_version=int(arguments.get("version", 0)),
                 **actor,
             )
             if not note:

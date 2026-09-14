@@ -136,7 +136,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         }
 
     @router.post("/oauth/register", status_code=201)
-    async def register_client(payload: ClientRegistration) -> Dict[str, Any]:
+    def register_client(payload: ClientRegistration) -> Dict[str, Any]:
         if payload.token_endpoint_auth_method != "none":
             raise HTTPException(status_code=400, detail="Only public PKCE clients are supported")
         if any(not _validate_redirect(uri) for uri in payload.redirect_uris):
@@ -177,7 +177,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         return client, _scope_string(scope)
 
     @router.get("/oauth/authorize", response_class=HTMLResponse)
-    async def authorize_page(
+    def authorize_page(
         client_id: str,
         redirect_uri: str,
         response_type: str = "code",
@@ -205,7 +205,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         return HTMLResponse(_consent_html(settings, client["client_name"], values))
 
     @router.post("/oauth/authorize", response_class=HTMLResponse)
-    async def authorize_submit(
+    def authorize_submit(
         client_id: str = Form(...),
         redirect_uri: str = Form(...),
         response_type: str = Form("code"),
@@ -279,7 +279,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         return RedirectResponse(f"{redirect_uri}?{urlencode(query)}", status_code=303)
 
     @router.post("/oauth/token")
-    async def issue_token(
+    def issue_token(
         grant_type: str = Form(...),
         client_id: str = Form(...),
         code: str = Form(""),
@@ -291,10 +291,14 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         client = _client(db, client_id)
         if not client:
             return JSONResponse({"error": "invalid_client"}, status_code=401)
-        scope = ""
-        actor_name = ""
-        if grant_type == "authorization_code":
-            with db.connect() as connection:
+        if grant_type not in {"authorization_code", "refresh_token"}:
+            return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
+        access = random_token()
+        refresh = random_token()
+        # Consumption and issuance must commit together. The writer lock also
+        # makes codes/refresh tokens single-use across concurrent requests.
+        with db.connect(write=True) as connection:
+            if grant_type == "authorization_code":
                 row = connection.execute(
                     "SELECT * FROM oauth_codes WHERE code_hash = ?", (token_hash(code),)
                 ).fetchone()
@@ -310,8 +314,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
                 scope = row["scope"]
                 actor_name = row["actor_name"]
                 connection.execute("DELETE FROM oauth_codes WHERE code_hash = ?", (token_hash(code),))
-        elif grant_type == "refresh_token":
-            with db.connect() as connection:
+            else:
                 row = connection.execute(
                     """SELECT * FROM oauth_tokens WHERE token_hash = ? AND token_kind = 'refresh'""",
                     (token_hash(refresh_token),),
@@ -324,12 +327,6 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
                 scope = row["scope"]
                 actor_name = row["actor_name"]
                 connection.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(refresh_token),))
-        else:
-            return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
-
-        access = random_token()
-        refresh = random_token()
-        with db.connect() as connection:
             connection.executemany(
                 """INSERT INTO oauth_tokens
                    (token_hash, token_kind, client_id, scope, resource, expires_at, actor_name)
@@ -351,7 +348,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         )
 
     @router.post("/oauth/revoke", status_code=200)
-    async def revoke_token(token: str = Form(...)) -> Dict[str, bool]:
+    def revoke_token(token: str = Form(...)) -> Dict[str, bool]:
         with db.connect() as connection:
             connection.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(token),))
         return {"revoked": True}

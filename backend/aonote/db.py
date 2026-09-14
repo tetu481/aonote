@@ -480,13 +480,16 @@ class Database:
         self.path = Path(path)
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
+    def connect(self, *, write: bool = False, transaction: bool = True) -> Iterator[sqlite3.Connection]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(str(self.path), timeout=10)
         connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
         try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            # Acquire the writer lock BEFORE reading versions or checking names.
+            # SQLite coordinates this across threads and worker processes.
+            if write or transaction:
+                connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             yield connection
             connection.commit()
         except Exception:
@@ -496,7 +499,9 @@ class Database:
             connection.close()
 
     def initialize(self) -> None:
-        with self.connect() as connection:
+        # WAL must be enabled outside a transaction; executescript also commits.
+        with self.connect(transaction=False) as connection:
+            connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS folders (
@@ -597,6 +602,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_links_target ON note_links(target_id);
                 """
             )
+            connection.execute("BEGIN IMMEDIATE")
             self._migrate_schema(connection)
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_notes_deleted ON notes(deleted_at DESC)"
@@ -854,40 +860,43 @@ class Database:
 
     def get_note(self, note_id: str) -> Optional[Dict[str, Any]]:
         with self.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL", (note_id,)
-            ).fetchone()
-            if not row:
-                return None
-            note = self._note_dict(row)
-            folder_path = self._folder_path(connection, row["folder_id"])
-            note["folder_name"] = folder_path[-1]["name"] if folder_path else None
-            note["folder_path"] = folder_path
-            note["path"] = "/".join(
-                [*[folder["name"] for folder in folder_path], row["filename"]]
+            return self._get_note(connection, note_id)
+
+    def _get_note(self, connection: sqlite3.Connection, note_id: str) -> Optional[Dict[str, Any]]:
+        row = connection.execute(
+            "SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL", (note_id,)
+        ).fetchone()
+        if not row:
+            return None
+        note = self._note_dict(row)
+        folder_path = self._folder_path(connection, row["folder_id"])
+        note["folder_name"] = folder_path[-1]["name"] if folder_path else None
+        note["folder_path"] = folder_path
+        note["path"] = "/".join(
+            [*[folder["name"] for folder in folder_path], row["filename"]]
+        )
+        note["links"] = [
+            {
+                "target": item["target_label"],
+                "id": item["target_id"],
+            }
+            for item in connection.execute(
+                """SELECT target_label, target_id FROM note_links
+                   WHERE source_id = ? ORDER BY target_label, alias""",
+                (note_id,),
             )
-            note["links"] = [
-                {
-                    "target": item["target_label"],
-                    "id": item["target_id"],
-                }
-                for item in connection.execute(
-                    """SELECT target_label, target_id FROM note_links
-                       WHERE source_id = ? ORDER BY target_label, alias""",
-                    (note_id,),
-                )
-            ]
-            note["backlinks"] = [
-                {"id": item["id"], "title": item["title"], "filename": item["filename"]}
-                for item in connection.execute(
-                    """SELECT n.id, n.title, n.filename FROM note_links l
-                       JOIN notes n ON n.id = l.source_id
-                       WHERE l.target_id = ? AND n.deleted_at IS NULL
-                       ORDER BY n.title""",
-                    (note_id,),
-                )
-            ]
-            return note
+        ]
+        note["backlinks"] = [
+            {"id": item["id"], "title": item["title"], "filename": item["filename"]}
+            for item in connection.execute(
+                """SELECT n.id, n.title, n.filename FROM note_links l
+                   JOIN notes n ON n.id = l.source_id
+                   WHERE l.target_id = ? AND n.deleted_at IS NULL
+                   ORDER BY n.title""",
+                (note_id,),
+            )
+        ]
+        return note
 
     @staticmethod
     def _note_path_parts(note_path: str) -> List[str]:
@@ -938,9 +947,9 @@ class Database:
                          AND deleted_at IS NULL""",
                     (filename,),
                 ).fetchall()
-        if len(rows) > 1:
-            raise ValueError(f"Note path is ambiguous: {note_path.strip()}")
-        return self.get_note(rows[0]["id"]) if rows else None
+            if len(rows) > 1:
+                raise ValueError(f"Note path is ambiguous: {note_path.strip()}")
+            return self._get_note(connection, rows[0]["id"]) if rows else None
 
     def list_recent(self, limit: int = 12) -> List[Dict[str, Any]]:
         with self.connect() as connection:
@@ -1059,14 +1068,14 @@ class Database:
     def create_folder(
         self, name: str, parent_id: Optional[str] = None, max_depth: int = 3
     ) -> Dict[str, Any]:
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             return self._create_folder(connection, name, parent_id, max_depth)
 
     def rename_folder(self, folder_id: str, name: str) -> Optional[Dict[str, Any]]:
         clean_name = self._clean_folder_name(name)
         if folder_id == "unfiled":
             return None
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             folder = connection.execute(
                 "SELECT id, parent_id FROM folders WHERE id = ?", (folder_id,)
             ).fetchone()
@@ -1094,7 +1103,7 @@ class Database:
     def delete_folder(self, folder_id: str) -> bool:
         if folder_id == "unfiled":
             return False
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             rows = connection.execute(
                 """WITH RECURSIVE subtree(id) AS (
                        SELECT id FROM folders WHERE id = ?
@@ -1163,7 +1172,7 @@ class Database:
         actor_name: str = "管理者",
         client_name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             note_id = self._create_note(
                 connection,
                 filename,
@@ -1172,7 +1181,7 @@ class Database:
                 actor_name,
                 client_name,
             )
-        return self.get_note(note_id)  # type: ignore[return-value]
+            return self._get_note(connection, note_id)  # type: ignore[return-value]
 
     def create_note_by_path(
         self,
@@ -1186,7 +1195,7 @@ class Database:
         folder_names, filename = parts[:-1], parts[-1]
         if len(folder_names) > max_depth:
             raise FolderDepthError(max_depth)
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             parent_id: Optional[str] = None
             traversed: List[str] = []
             for folder_name in folder_names:
@@ -1215,7 +1224,7 @@ class Database:
                 actor_name,
                 client_name,
             )
-        return self.get_note(note_id)  # type: ignore[return-value]
+            return self._get_note(connection, note_id)  # type: ignore[return-value]
 
     def update_note(
         self,
@@ -1227,7 +1236,7 @@ class Database:
         actor_name: str = "管理者",
         client_name: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             current = connection.execute(
                 "SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL", (note_id,)
             ).fetchone()
@@ -1252,7 +1261,7 @@ class Database:
                 and next_filename == current["filename"]
                 and next_folder == current["folder_id"]
             ):
-                return self.get_note(note_id)
+                return self._get_note(connection, note_id)
             next_version = current["version"] + 1
             stamp = now_ts()
             connection.execute(
@@ -1275,7 +1284,7 @@ class Database:
             )
             self._reindex(connection, note_id)
             self._resolve_all_links(connection)
-        return self.get_note(note_id)
+            return self._get_note(connection, note_id)
 
     def relocate_note(
         self,
@@ -1296,7 +1305,7 @@ class Database:
         )
 
     def delete_note(self, note_id: str) -> bool:
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             row = connection.execute(
                 "SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL", (note_id,)
             ).fetchone()
@@ -1356,7 +1365,7 @@ class Database:
             return note
 
     def restore_note(self, note_id: str) -> Optional[Dict[str, Any]]:
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             row = connection.execute(
                 "SELECT * FROM notes WHERE id = ? AND deleted_at IS NOT NULL",
                 (note_id,),
@@ -1385,13 +1394,13 @@ class Database:
             )
             self._reindex(connection, note_id)
             self._resolve_all_links(connection)
-        return self.get_note(note_id)
+            return self._get_note(connection, note_id)
 
     def purge_trash(self, older_than_days: int) -> int:
         if older_than_days < 0:
             raise ValueError("older_than_days must be zero or greater")
         threshold = now_ts() - older_than_days * 86400
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             rows = connection.execute(
                 """SELECT id FROM notes
                    WHERE deleted_at IS NOT NULL AND deleted_at <= ?""",
@@ -1499,7 +1508,7 @@ class Database:
         from .security import random_token
 
         token = random_token()
-        with self.connect() as connection:
+        with self.connect(write=True) as connection:
             connection.execute(
                 "INSERT INTO web_sessions VALUES (?, ?)",
                 (token_hash(token), now_ts() + ttl),

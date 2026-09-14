@@ -27,6 +27,8 @@ class Settings:
     access_token_ttl: int = 3600
     refresh_token_ttl: int = 2592000
     session_ttl: int = 604800
+    min_free_disk_mb: int = 100
+    monitor_interval_seconds: int = 60
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -41,6 +43,12 @@ class Settings:
             ),
             max_folder_depth=_as_positive_int(
                 os.getenv("AONOTE_MAX_FOLDER_DEPTH", ""), 3
+            ),
+            min_free_disk_mb=_as_positive_int(
+                os.getenv("AONOTE_MIN_FREE_DISK_MB", ""), 100
+            ),
+            monitor_interval_seconds=_as_positive_int(
+                os.getenv("AONOTE_MONITOR_INTERVAL_SECONDS", ""), 60
             ),
         )
 

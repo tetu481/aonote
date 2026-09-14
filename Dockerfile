@@ -18,4 +18,5 @@ RUN python -m pip install --no-cache-dir .
 RUN mkdir -p /data && chown -R aonote:aonote /data /app
 USER aonote
 EXPOSE 8000
-CMD ["uvicorn", "aonote.main:app", "--host", "0.0.0.0", "--port", "8000"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+CMD ["uvicorn", "aonote.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

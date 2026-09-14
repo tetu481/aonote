@@ -51,6 +51,26 @@ docker compose up --build -d
 
 In production, expose the app over HTTPS through Caddy, nginx, or a similar reverse proxy. `AONOTE_BASE_URL` must exactly match the externally visible HTTPS origin.
 
+## Reliability and Monitoring
+
+- Consuming an OAuth authorization code or refresh token and storing the new tokens commit in one transaction. Storage failures roll back the entire exchange, and concurrent exchanges cannot reuse the same code or token.
+- Note updates acquire a writer lock before checking the version, then update content, revision history, and the search index together. On a version conflict, read the note again and reapply the change. Browser and MCP database operations run in worker threads so database waits do not block the event loop.
+- `/healthz` checks liveness. `/readyz` checks database reads and writer-lock acquisition, frontend deployment, and free space on the database filesystem, returning HTTP 503 on failure. It does not replace a full database integrity check or backups.
+- Docker image and Compose health checks use `/readyz`. Docker does not automatically restart a container just because it becomes `unhealthy`. Configure external monitoring and notifications separately.
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `AONOTE_MIN_FREE_DISK_MB` | `100` | Minimum free space for readiness (MiB, positive integer) |
+| `AONOTE_MONITOR_INTERVAL_SECONDS` | `60` | Background monitoring interval (seconds, positive integer) |
+
+The app emits `readiness_changed` JSON logs on startup and when health status changes. HTTP logs contain route names, status codes, durations, and request IDs; MCP logs contain tool names, durations, and error categories. Request IDs match the `X-Request-ID` response header. aonote logs omit note content, filenames, paths, search terms, passwords, and authentication tokens.
+
+```bash
+docker compose logs --tail=100 -f aonote
+```
+
+Docker disables Uvicorn's standard access log, which includes query strings. For direct execution, use `uvicorn aonote.main:app --no-access-log` as well. Exclude sensitive information from reverse proxy logs too. Database lock timeouts and storage failures return HTTP 503 through the HTTP API, or `isError: true` with an error category through MCP tools. Before retrying a write whose response was lost, read the note to check whether it was already saved.
+
 ## Connecting from ChatGPT
 
 The MCP URL is `https://your-host/mcp`. In ChatGPT developer mode, create a plugin and use this URL as its connection endpoint. The aonote OAuth consent screen opens during connection, where access can be approved with the admin password.

@@ -47,7 +47,7 @@ class NoteLocation(BaseModel):
 def create_api_router(settings: Settings, db: Database) -> APIRouter:
     router = APIRouter(prefix="/api")
 
-    async def require_user(
+    def require_user(
         request: Request,
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
@@ -79,7 +79,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         }
 
     @router.post("/session")
-    async def login(payload: LoginInput, response: Response) -> Dict[str, bool]:
+    def login(payload: LoginInput, response: Response) -> Dict[str, bool]:
         if not verify_password(payload.password, settings.admin_password):
             raise HTTPException(status_code=401, detail="パスワードが正しくありません")
         session = db.create_session(settings.session_ttl)
@@ -94,7 +94,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return {"authenticated": True}
 
     @router.get("/status")
-    async def app_status(_: Dict[str, Any] = Depends(require_user)) -> Dict[str, Any]:
+    def app_status(_: Dict[str, Any] = Depends(require_user)) -> Dict[str, Any]:
         with db.connect() as connection:
             notes = connection.execute(
                 "SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL"
@@ -112,22 +112,22 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         }
 
     @router.get("/tree")
-    async def tree(_: Dict[str, Any] = Depends(require_user)) -> Any:
+    def tree(_: Dict[str, Any] = Depends(require_user)) -> Any:
         return db.list_tree()
 
     @router.get("/recent")
-    async def recent(limit: int = 12, _: Dict[str, Any] = Depends(require_user)) -> Any:
+    def recent(limit: int = 12, _: Dict[str, Any] = Depends(require_user)) -> Any:
         return db.list_recent(max(1, min(limit, 50)))
 
     @router.get("/notes/{note_id}")
-    async def get_note(note_id: str, _: Dict[str, Any] = Depends(require_user)) -> Any:
+    def get_note(note_id: str, _: Dict[str, Any] = Depends(require_user)) -> Any:
         note = db.get_note(note_id)
         if not note:
             raise HTTPException(status_code=404, detail="Note not found")
         return note
 
     @router.post("/notes", status_code=201)
-    async def create_note(
+    def create_note(
         payload: NoteCreate, principal: Dict[str, Any] = Depends(require_user)
     ) -> Any:
         require_write(principal)
@@ -141,7 +141,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.patch("/notes/{note_id}")
-    async def update_note(
+    def update_note(
         note_id: str,
         payload: NoteUpdate,
         principal: Dict[str, Any] = Depends(require_user),
@@ -173,7 +173,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return note
 
     @router.patch("/notes/{note_id}/location")
-    async def relocate_note(
+    def relocate_note(
         note_id: str,
         payload: NoteLocation,
         principal: Dict[str, Any] = Depends(require_user),
@@ -201,7 +201,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return note
 
     @router.delete("/notes/{note_id}", status_code=204)
-    async def delete_note(
+    def delete_note(
         note_id: str, principal: Dict[str, Any] = Depends(require_user)
     ) -> Response:
         require_write(principal)
@@ -210,12 +210,12 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return Response(status_code=204)
 
     @router.get("/trash")
-    async def list_trash(principal: Dict[str, Any] = Depends(require_user)) -> Any:
+    def list_trash(principal: Dict[str, Any] = Depends(require_user)) -> Any:
         require_browser(principal)
         return db.list_trash()
 
     @router.get("/trash/{note_id}")
-    async def get_trashed_note(
+    def get_trashed_note(
         note_id: str, principal: Dict[str, Any] = Depends(require_user)
     ) -> Any:
         require_browser(principal)
@@ -225,7 +225,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return note
 
     @router.post("/trash/{note_id}/restore")
-    async def restore_trashed_note(
+    def restore_trashed_note(
         note_id: str, principal: Dict[str, Any] = Depends(require_user)
     ) -> Any:
         require_browser(principal)
@@ -241,7 +241,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return note
 
     @router.delete("/trash")
-    async def purge_trash(
+    def purge_trash(
         older_than_days: int = Query(default=30, ge=0, le=36500),
         principal: Dict[str, Any] = Depends(require_user),
     ) -> Any:
@@ -249,7 +249,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return {"deleted": db.purge_trash(older_than_days)}
 
     @router.post("/folders", status_code=201)
-    async def create_folder(
+    def create_folder(
         payload: FolderInput, principal: Dict[str, Any] = Depends(require_user)
     ) -> Any:
         require_write(principal)
@@ -266,7 +266,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.patch("/folders/{folder_id}")
-    async def rename_folder(
+    def rename_folder(
         folder_id: str,
         payload: FolderRename,
         principal: Dict[str, Any] = Depends(require_user),
@@ -281,7 +281,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return folder
 
     @router.delete("/folders/{folder_id}", status_code=204)
-    async def delete_folder(
+    def delete_folder(
         folder_id: str, principal: Dict[str, Any] = Depends(require_user)
     ) -> Response:
         require_write(principal)
@@ -290,7 +290,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         return Response(status_code=204)
 
     @router.get("/search")
-    async def search(
+    def search(
         q: str = "", limit: int = 20, _: Dict[str, Any] = Depends(require_user)
     ) -> Any:
         return {"query": q, "results": db.search(q, max(1, min(limit, 50)))}
