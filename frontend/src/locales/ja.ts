@@ -18,6 +18,13 @@ export const ja = {
   },
   app: {
     loading: "aonoteを開いています",
+    startupError: {
+      title: "ワークスペースを読み込めませんでした",
+      description: "ノートが空になったわけではありません。サーバーや通信の状態を確認して、再試行してください。",
+      network: "サーバーに接続できません。",
+      http: (status: number) => `サーバーエラー（HTTP ${status}）`,
+      retry: "読み込みを再試行",
+    },
     saveState: {
       idle: "",
       dirty: "未保存",

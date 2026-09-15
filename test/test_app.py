@@ -13,6 +13,8 @@ from aonote.db import (
     ENGLISH_WELCOME_SEED_MIGRATION,
     PRE_FOLDER_AGENT_SKILL_NOTE,
     PRE_FOLDER_MCP_NOTE,
+    PRE_HISTORY_REMOVAL_ENGLISH_WELCOME_NOTE,
+    PRE_HISTORY_REMOVAL_WELCOME_NOTE,
     PRE_REFRESH_MCP_NOTE,
     PRE_REFRESH_AGENT_SKILL_NOTE,
     PRE_REFRESH_SEARCH_NOTE,
@@ -142,6 +144,8 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
         assert welcome_note_response.status_code == 200
         assert "Markdown Alerts、Mermaid" in welcome_note_response.json()["content"]
         assert "ライト／ダークテーマと言語" in welcome_note_response.json()["content"]
+        assert "更新履歴" not in welcome_note_response.json()["content"]
+        assert "削除したノートをゴミ箱から復元" in welcome_note_response.json()["content"]
         assert welcome_note_response.json()["links"] == [
             {"target": "02-MCP連携", "id": mcp_note["id"]}
         ]
@@ -163,6 +167,8 @@ async def test_markdown_crud_search_and_version_conflict(tmp_path: Path):
                 english_note["filename"]
             ]
         english_welcome_response = await client.get(f"/api/notes/{english_welcome['id']}")
+        assert "history" not in english_welcome_response.json()["content"]
+        assert "Restore deleted notes from Trash" in english_welcome_response.json()["content"]
         assert english_welcome_response.json()["links"] == [
             {"target": "02-MCP Integration", "id": english_mcp["id"]}
         ]
@@ -1169,6 +1175,61 @@ def test_unmodified_previous_seed_notes_are_migrated(tmp_path: Path):
         assert migrated is not None
         assert migrated["content"] == SEED_NOTES[note["filename"]]
         assert migrated["version"] == note["version"] + 1
+
+
+@pytest.mark.parametrize(
+    "folder_name,filename,previous_content,canonical_content",
+    [
+        ("ようこそ", "01-ようこそ.md", PRE_HISTORY_REMOVAL_WELCOME_NOTE, SEED_NOTES["01-ようこそ.md"]),
+        ("Welcome", "01-Welcome.md", PRE_HISTORY_REMOVAL_ENGLISH_WELCOME_NOTE, ENGLISH_SEED_NOTES["01-Welcome.md"]),
+    ],
+)
+@pytest.mark.parametrize("state", ["unchanged", "customized", "deleted"])
+def test_history_claim_removed_only_from_unmodified_welcome_notes(
+    tmp_path: Path, folder_name: str, filename: str, previous_content: str,
+    canonical_content: str, state: str,
+):
+    database = Database(tmp_path / "welcome-description.sqlite3")
+    database.initialize()
+    other_folder = database.create_folder("Personal")
+    lookalike = database.create_note(filename, previous_content, other_folder["id"])
+    nested_folder = database.create_folder(folder_name, other_folder["id"])
+    nested_lookalike = database.create_note(filename, previous_content, nested_folder["id"])
+    content = previous_content + ("\nPersonal addition\n" if state == "customized" else "")
+    with database.connect() as connection:
+        original = connection.execute(
+            """SELECT n.* FROM notes n JOIN folders f ON f.id = n.folder_id
+               WHERE f.name = ? AND f.parent_id IS NULL AND n.filename = ?""",
+            (folder_name, filename),
+        ).fetchone()
+        connection.execute(
+            "UPDATE notes SET content = ?, deleted_at = ? WHERE id = ?",
+            (content, 100 if state == "deleted" else None, original["id"]),
+        )
+
+    # Repeated startup must not repeat the migration or overwrite personal notes.
+    database.initialize()
+    database.initialize()
+    assert database.get_note(lookalike["id"])["content"] == previous_content
+    assert database.get_note(nested_lookalike["id"])["content"] == previous_content
+    with database.connect() as connection:
+        updated = connection.execute("SELECT * FROM notes WHERE id = ?", (original["id"],)).fetchone()
+        revisions = connection.execute(
+            "SELECT content FROM note_revisions WHERE note_id = ?", (original["id"],)
+        ).fetchall()
+        assert updated["updated_at"] == original["updated_at"]
+        if state == "unchanged":
+            assert updated["content"] == canonical_content
+            assert updated["version"] == original["version"] + 1
+            assert [row["content"] for row in revisions] == [previous_content]
+            assert connection.execute(
+                "SELECT content FROM note_fts WHERE note_id = ?", (original["id"],)
+            ).fetchone()["content"] == canonical_content
+        else:
+            assert updated["content"] == content
+            assert updated["version"] == original["version"]
+            assert updated["deleted_at"] == (100 if state == "deleted" else None)
+            assert not revisions
 
 
 def test_existing_default_workspace_receives_english_seed_once(tmp_path: Path):

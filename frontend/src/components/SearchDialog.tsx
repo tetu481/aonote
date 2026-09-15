@@ -33,7 +33,9 @@ export function SearchDialog({ open, onClose, onSelect }: { open: boolean; onClo
           {query && results.length === 0 ? <p className="empty-search">{uiText.search.noResults}</p> : null}
           {results.map((item) => (
             <button key={item.id} onClick={() => { onSelect(item.id); onClose(); }}>
-              <FileText size={18} /><span><strong>{item.title}</strong><small dangerouslySetInnerHTML={{ __html: item.snippet }} /></span><kbd>{uiText.search.openResultKey}</kbd>
+              <FileText size={18} /><span><strong>{item.title}</strong><small>{item.snippet_parts
+                ? item.snippet_parts.map((part, index) => part.highlight ? <mark key={index}>{part.text}</mark> : part.text)
+                : item.snippet}</small></span><kbd>{uiText.search.openResultKey}</kbd>
             </button>
           ))}
           {!query ? <div className="search-hint"><span>{uiText.search.hint}</span><kbd>{uiText.search.escapeKey}</kbd><span>{uiText.search.closeSuffix}</span></div> : null}

@@ -5,6 +5,7 @@ import { CircleAlert, Info, Lightbulb, ShieldAlert, TriangleAlert } from "lucide
 import { useUiText } from "../LocaleContext";
 import { remarkAlerts } from "../remarkAlerts";
 import { remarkHeadingIds } from "../remarkHeadingIds";
+import { normalizeWikilinks } from "../markdown";
 import type { Note } from "../types";
 import { MermaidDiagram } from "./MermaidDiagram";
 
@@ -35,13 +36,6 @@ function MarkdownPre({ node: _node, children, ...props }: ComponentPropsWithoutR
     return <MermaidDiagram chart={String(child.props.children ?? "").replace(/\n$/, "")} />;
   }
   return <pre {...props}>{children}</pre>;
-}
-
-function normalizeWikilinks(markdown: string) {
-  return markdown.replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g, (_match, target: string, alias?: string) => {
-    const label = alias || target;
-    return `[${label}](#wikilink-${encodeURIComponent(target)})`;
-  });
 }
 
 function MarkdownLink({ node: _node, href, children, ...props }: ComponentPropsWithoutRef<"a"> & ExtraProps) {

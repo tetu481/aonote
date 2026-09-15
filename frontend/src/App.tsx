@@ -65,6 +65,7 @@ export default function App() {
   const [revealTree, setRevealTree] = useState(0);
   const [authRequired, setAuthRequired] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [startupError, setStartupError] = useState<{ status: number | null } | null>(null);
   const [documentBusy, setDocumentBusy] = useState(false);
   const [documentError, setDocumentError] = useState("");
   const documentQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -141,7 +142,7 @@ export default function App() {
     setContent(next);
   };
 
-  const selectById = useCallback(async (id: string) => {
+  const selectById = useCallback(async (id: string, propagateError = false) => {
     updateSidebarMode("files");
     setDesktopSidebar(true);
     setMobileSidebar(false);
@@ -156,21 +157,30 @@ export default function App() {
       setRestoreError("");
       setSelectedFolderId(selected.folder_id ?? "unfiled");
       setRevealTree((value) => value + 1);
-    }).catch(() => {}); // withSavedNote displays failures without losing the draft.
+    }).catch((error: unknown) => {
+      // Normal navigation keeps the draft and displays documentError; startup
+      // must also surface a failed initial note read in the retryable screen.
+      if (propagateError) throw error;
+    });
   }, [updateSidebarMode, withSavedNote, showNote]);
 
   const loadApp = useCallback(async () => {
     setLoading(true);
+    setStartupError(null);
     try {
       const [nextStatus, nextTree, nextRecent, nextTrash] = await Promise.all([api.status(), api.tree(), api.recent(), api.trash()]);
       setStatus(nextStatus); setTree(nextTree); setRecent(nextRecent); setTrash(nextTrash); setAuthRequired(false);
       const notes = flattenNotes(nextTree);
       const welcomeFolder = nextTree.find((folder) => folder.name === welcomeDefaults.folderName);
       const preferred = welcomeFolder?.notes.find((item) => item.filename === welcomeDefaults.noteFilename) ?? notes[0];
-      if (preferred) await selectById(preferred.id);
+      if (preferred) await selectById(preferred.id, true);
       else setSelectedFolderId(welcomeFolder?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) setAuthRequired(true);
+      else {
+        setAuthRequired(false);
+        setStartupError({ status: error instanceof ApiError ? error.status : null });
+      }
     } finally { setLoading(false); }
   }, [selectById, welcomeDefaults.folderName, welcomeDefaults.noteFilename]);
 
@@ -212,6 +222,14 @@ export default function App() {
 
   if (authRequired) return <LoginView onLogin={loadApp} />;
   if (loading) return <div className="loading-screen"><span className="loading-mark" />{uiText.app.loading}</div>;
+  if (startupError) return <main className="startup-error">
+    <section role="alert" aria-labelledby="startup-error-title">
+      <h1 id="startup-error-title">{uiText.app.startupError.title}</h1>
+      <p>{uiText.app.startupError.description}</p>
+      <p>{startupError.status === null ? uiText.app.startupError.network : uiText.app.startupError.http(startupError.status)}</p>
+      <button className="primary-button" onClick={() => void loadApp()}><RefreshCw size={16} />{uiText.app.startupError.retry}</button>
+    </section>
+  </main>;
 
   const selectSummary = (summary: NoteSummary) => { void selectById(summary.id); };
   const selectTrashedSummary = async (summary: TrashedNoteSummary) => {

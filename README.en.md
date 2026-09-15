@@ -11,7 +11,7 @@ aonote is a lightweight web workspace where you and AI can work with the same Ma
 - A folder and file tree on the left, with Markdown editing and preview on the right
 - Markdown editing, split preview, autosave, and update-conflict detection
 - Full-text search across titles, filenames, and content using SQLite FTS5 with the trigram tokenizer
-- Recent notes, Wiki links, backlinks, and update history
+- Recent notes, Wiki links, and backlinks
 - An MCP Streamable HTTP-compatible JSON-RPC endpoint
 - OAuth 2.1 authorization code flow with PKCE (S256), DCR, and Protected Resource Metadata
 - MCP tools for listing, retrieving by ID or path, searching, creating folders and notes, updating, and deleting
@@ -55,9 +55,10 @@ In production, expose the app over HTTPS through Caddy, nginx, or a similar reve
 
 - Switching notes or replacing editor content waits for autosave to finish. If saving fails, the operation stops and your draft stays on screen so you can retry saving. For update conflicts, copy your unsaved text before reloading the page, then merge it with the server-side changes. Unsaved drafts do not persist after the browser is closed.
 - Consuming an OAuth authorization code or refresh token and storing the new tokens commit in one transaction. Storage failures roll back the entire exchange, and concurrent exchanges cannot reuse the same code or token.
-- Note updates acquire a writer lock before checking the version, then update content, revision history, and the search index together. On a version conflict, read the note again and reapply the change. Browser and MCP database operations run in worker threads so database waits do not block the event loop.
+- Note updates acquire a writer lock before checking the version, then update content and the search index together. On a version conflict, read the note again and reapply the change. Browser and MCP database operations run in worker threads so database waits do not block the event loop.
 - `/healthz` checks liveness. `/readyz` checks database reads and writer-lock acquisition, frontend deployment, and free space on the database filesystem, returning HTTP 503 on failure. It does not replace a full database integrity check or backups.
 - Docker image and Compose health checks use `/readyz`. Docker does not automatically restart a container just because it becomes `unhealthy`. Configure external monitoring and notifications separately.
+- If startup loading fails, the app shows an error and a retry button instead of an empty workspace. Check your connection, server, and database, then select **Retry loading** after recovery.
 
 | Environment variable | Default | Purpose |
 |---|---|---|
@@ -71,6 +72,13 @@ docker compose logs --tail=100 -f aonote
 ```
 
 Docker disables Uvicorn's standard access log, which includes query strings. For direct execution, use `uvicorn aonote.main:app --no-access-log` as well. Exclude sensitive information from reverse proxy logs too. Database lock timeouts and storage failures return HTTP 503 through the HTTP API, or `isError: true` with an error category through MCP tools. Before retrying a write whose response was lost, read the note to check whether it was already saved.
+
+## Note Names, Links, and REST API Behavior
+
+- Updates and moves cannot create duplicate filenames in the same destination, including Unfiled. Deleting a folder also checks for collisions with Unfiled or between its descendant folders before moving any notes. On a collision, the entire operation is rejected with HTTP 409; rename the conflicting notes first. Existing filenames are never automatically changed.
+- `[[Projects/guide.md]]` and `[[Projects/guide]]` are workspace-relative paths. Folder-qualified paths are case-sensitive and never fall back to another folder's same-name note. Bare Wiki links prefer the source folder, then resolve globally only when there is exactly one candidate. Use an explicit path to disambiguate a link.
+- REST `PATCH /api/notes/{note_id}` requires the positive integer `version` returned when the note was read. Missing or invalid versions return HTTP 422, update conflicts return 409, and invalid filenames return 400. The browser and MCP already send versions.
+- OAuth access to `GET /api/search` requires `notes:search`, just like MCP `search_notes`; `notes:read` alone does not permit searching. The `snippet` response escapes HTML except for generated highlights, and the browser safely renders the text and highlights in `snippet_parts`.
 
 ## Connecting from ChatGPT
 

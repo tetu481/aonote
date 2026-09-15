@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 import sqlite3
@@ -163,7 +164,7 @@ aonoteは、あなたとAIが同じ知識を育てるためのMarkdownワーク�
 - Markdownを編集・プレビューし、変更を自動保存
 - Markdown Alerts、Mermaid、Wikiリンク、バックリンクを表示
 - SQLite FTS5でタイトル・ファイル名・本文を全文検索
-- 更新履歴を確認し、削除したノートをゴミ箱から復元
+- 削除したノートをゴミ箱から復元
 - OAuthで保護されたMCPを通じてAIと安全に共同編集
 - 設定画面でライト／ダークテーマと言語を切り替え
 
@@ -331,7 +332,7 @@ aonote is a Markdown workspace where you and AI can grow the same knowledge toge
 - Edit and preview Markdown with autosave
 - Render Markdown Alerts, Mermaid diagrams, Wiki links, and backlinks
 - Search titles, filenames, and content with SQLite FTS5
-- Review revision history and restore deleted notes from Trash
+- Restore deleted notes from Trash
 - Collaborate safely with AI through an OAuth-protected MCP server
 - Switch the light/dark theme and display language in Settings
 
@@ -449,8 +450,18 @@ PRE_REFRESH_PRE_FOLDER_MCP_NOTE = PRE_REFRESH_MCP_NOTE.replace(
 PRE_REFRESH_LEGACY_MCP_NOTE = PRE_REFRESH_PRE_FOLDER_MCP_NOTE.replace(
     MCP_PATH_GUIDANCE, ""
 )
+# Exact previous seed texts allow safe updates without touching edited notes.
+PRE_HISTORY_REMOVAL_WELCOME_NOTE = SEED_NOTES["01-ようこそ.md"].replace(
+    "- 削除したノートをゴミ箱から復元",
+    "- 更新履歴を確認し、削除したノートをゴミ箱から復元",
+)
+PRE_HISTORY_REMOVAL_ENGLISH_WELCOME_NOTE = ENGLISH_SEED_NOTES["01-Welcome.md"].replace(
+    "- Restore deleted notes from Trash",
+    "- Review revision history and restore deleted notes from Trash",
+)
 LEGACY_SEED_NOTES = {
-    "01-ようこそ.md": (PRE_REFRESH_WELCOME_NOTE,),
+    "01-ようこそ.md": (PRE_REFRESH_WELCOME_NOTE, PRE_HISTORY_REMOVAL_WELCOME_NOTE),
+    "01-Welcome.md": (PRE_HISTORY_REMOVAL_ENGLISH_WELCOME_NOTE,),
     "02-MCP連携.md": (
         PRE_FOLDER_MCP_NOTE,
         LEGACY_MCP_NOTE,
@@ -607,13 +618,18 @@ class Database:
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_notes_deleted ON notes(deleted_at DESC)"
             )
-            self._migrate_seed_content(connection)
+            self._migrate_seed_content(connection, "ようこそ", SEED_NOTES)
+            self._migrate_seed_content(
+                connection, "Welcome", {"01-Welcome.md": ENGLISH_SEED_NOTES["01-Welcome.md"]}
+            )
             note_count = connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
             folder_count = connection.execute("SELECT COUNT(*) FROM folders").fetchone()[0]
             if note_count == 0 and folder_count == 0:
                 self._seed(connection)
             else:
                 self._migrate_english_welcome_seed(connection)
+            # Correct targets stored by earlier, basename-only link resolution.
+            self._resolve_all_links(connection)
 
     @staticmethod
     def _migrate_schema(connection: sqlite3.Connection) -> None:
@@ -643,20 +659,22 @@ class Database:
                 if name not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
 
-    def _migrate_seed_content(self, connection: sqlite3.Connection) -> None:
-        placeholders = ", ".join("?" for _ in SEED_NOTES)
+    def _migrate_seed_content(
+        self, connection: sqlite3.Connection, folder_name: str, seed_notes: Dict[str, str]
+    ) -> None:
+        placeholders = ", ".join("?" for _ in seed_notes)
         rows = connection.execute(
             f"""SELECT n.* FROM notes n
                 JOIN folders f ON f.id = n.folder_id
-                WHERE f.name = 'ようこそ' AND f.parent_id IS NULL
+                WHERE f.name = ? AND f.parent_id IS NULL
                   AND n.deleted_at IS NULL
                   AND n.filename IN ({placeholders})""",
-            tuple(SEED_NOTES),
+            (folder_name, *seed_notes),
         ).fetchall()
         changed = False
         stamp = now_ts()
         for row in rows:
-            canonical_content = SEED_NOTES[row["filename"]]
+            canonical_content = seed_notes[row["filename"]]
             canonical_title = self.extract_title(canonical_content, row["filename"])
             content = LEGACY_BRAND_RE.sub("aonote", row["content"])
             title = LEGACY_BRAND_RE.sub("aonote", row["title"])
@@ -889,7 +907,7 @@ class Database:
         note["backlinks"] = [
             {"id": item["id"], "title": item["title"], "filename": item["filename"]}
             for item in connection.execute(
-                """SELECT n.id, n.title, n.filename FROM note_links l
+                """SELECT DISTINCT n.id, n.title, n.filename FROM note_links l
                    JOIN notes n ON n.id = l.source_id
                    WHERE l.target_id = ? AND n.deleted_at IS NULL
                    ORDER BY n.title""",
@@ -1092,6 +1110,7 @@ class Database:
                 "UPDATE folders SET name = ?, updated_at = ? WHERE id = ?",
                 (clean_name, now_ts(), folder_id),
             )
+            self._resolve_all_links(connection)
             depth = len(self._folder_path(connection, folder_id))
             return {
                 "id": folder_id,
@@ -1118,12 +1137,26 @@ class Database:
             if not folder_ids:
                 return False
             placeholders = ", ".join("?" for _ in folder_ids)
+            # Preflight the entire subtree before moving anything. This also
+            # catches same-name notes in two different descendant folders.
+            collision = connection.execute(
+                f"""SELECT filename FROM notes
+                    WHERE deleted_at IS NULL
+                      AND (folder_id IS NULL OR folder_id IN ({placeholders}))
+                    GROUP BY filename HAVING COUNT(*) > 1
+                      AND SUM(CASE WHEN folder_id IS NOT NULL THEN 1 ELSE 0 END) > 0
+                    LIMIT 1""",
+                folder_ids,
+            ).fetchone()
+            if collision:
+                raise sqlite3.IntegrityError("Moving notes to Unfiled would create duplicate names")
             # フォルダを消してもノート本文は残し、未整理へ戻す。
             connection.execute(
                 f"UPDATE notes SET folder_id = NULL WHERE folder_id IN ({placeholders})",
                 folder_ids,
             )
             connection.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
+            self._resolve_all_links(connection)
             return True
 
     def _create_note(
@@ -1255,6 +1288,13 @@ class Database:
                 next_folder = None
             if next_folder:
                 self._folder_path(connection, next_folder)
+            duplicate = connection.execute(
+                """SELECT id FROM notes WHERE folder_id IS ? AND filename = ?
+                   AND id <> ? AND deleted_at IS NULL""",
+                (next_folder, next_filename, note_id),
+            ).fetchone()
+            if duplicate:
+                raise sqlite3.IntegrityError("Note already exists")
             next_title = self.extract_title(next_content, next_filename)
             if (
                 next_content == current["content"]
@@ -1438,23 +1478,52 @@ class Database:
                         "id": row["id"],
                         "title": row["title"],
                         "filename": row["filename"],
-                        "snippet": self._plain_snippet(row["content"], clean),
+                        **self._search_snippet(self._plain_snippet(row["content"], clean)),
                         "rank": 0,
                         "updated_at": row["updated_at"],
                     }
                     for row in rows
                 ]
             escaped = clean.replace('"', '""')
+            # FTS inserts markers but does not escape the note's own HTML.
+            marker = uuid4().hex
+            start_marker, end_marker = f"{marker}:start", f"{marker}:end"
             rows = connection.execute(
                 """SELECT n.id, n.title, n.filename, n.updated_at,
-                          snippet(note_fts, 3, '<mark>', '</mark>', '…', 22) AS snippet,
+                          snippet(note_fts, 3, ?, ?, '…', 22) AS snippet,
                           bm25(note_fts, 2.0, 1.2, 1.0) AS rank
                    FROM note_fts JOIN notes n ON n.id = note_fts.note_id
                    WHERE note_fts MATCH ? AND n.deleted_at IS NULL
                    ORDER BY rank LIMIT ?""",
-                (f'"{escaped}"', limit),
+                (start_marker, end_marker, f'"{escaped}"', limit),
             ).fetchall()
-            return [dict(row) for row in rows]
+            return [
+                {**dict(row), **self._search_snippet(row["snippet"], start_marker, end_marker)}
+                for row in rows
+            ]
+
+    @staticmethod
+    def _search_snippet(
+        text: str, start_marker: Optional[str] = None, end_marker: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        parts = []
+        highlighted = False
+        tokens = re.split(f"({re.escape(start_marker)}|{re.escape(end_marker)})", text) if start_marker and end_marker else [text]
+        for token in tokens:
+            if start_marker and token == start_marker:
+                highlighted = True
+            elif end_marker and token == end_marker:
+                highlighted = False
+            elif token:
+                parts.append({"text": token, "highlight": highlighted})
+        # Retain the existing HTML snippet field for API/MCP compatibility,
+        # but only application-generated <mark> tags may remain as markup.
+        safe_html = "".join(
+            f"<mark>{html.escape(part['text'])}</mark>" if part["highlight"]
+            else html.escape(part["text"])
+            for part in parts
+        )
+        return {"snippet": safe_html, "snippet_parts": parts}
 
     @staticmethod
     def _plain_snippet(content: str, query: str) -> str:
@@ -1482,26 +1551,46 @@ class Database:
                 (note_id, label, alias),
             )
 
-    @staticmethod
-    def _resolve_all_links(connection: sqlite3.Connection) -> None:
+    @classmethod
+    def _resolve_all_links(cls, connection: sqlite3.Connection) -> None:
         connection.execute("UPDATE note_links SET target_id = NULL")
         notes = connection.execute(
-            "SELECT id, title, filename FROM notes WHERE deleted_at IS NULL"
+            "SELECT id, folder_id, title, filename FROM notes WHERE deleted_at IS NULL"
         ).fetchall()
-        lookup: Dict[str, str] = {}
+        paths: Dict[str, set[str]] = {}
+        stems: Dict[str, set[str]] = {}
+        names: Dict[str, set[str]] = {}
+        local_names: Dict[tuple[Optional[str], str], set[str]] = {}
+        prefixes: Dict[Optional[str], str] = {None: ""}
         for note in notes:
-            lookup[note["title"].casefold()] = note["id"]
-            lookup[note["filename"].removesuffix(".md").casefold()] = note["id"]
+            folder_id = note["folder_id"]
+            if folder_id not in prefixes:
+                prefixes[folder_id] = "/".join(folder["name"] for folder in cls._folder_path(connection, folder_id)) + "/"
+            filename = note["filename"]
+            stem = filename[:-3] if filename.lower().endswith(".md") else filename
+            paths.setdefault(prefixes[folder_id] + filename, set()).add(note["id"])
+            stems.setdefault(prefixes[folder_id] + stem, set()).add(note["id"])
+            for name in {note["title"].casefold(), filename.casefold(), stem.casefold()}:
+                names.setdefault(name, set()).add(note["id"])
+                local_names.setdefault((folder_id, name), set()).add(note["id"])
         links = connection.execute(
-            """SELECT l.rowid, l.target_label FROM note_links l
+            """SELECT l.rowid, l.target_label, n.folder_id FROM note_links l
                JOIN notes n ON n.id = l.source_id
                WHERE n.deleted_at IS NULL"""
         ).fetchall()
         for link in links:
-            target = lookup.get(link["target_label"].split("/")[-1].casefold())
-            if target:
+            label = link["target_label"].strip()
+            if "/" in label:
+                # Explicit workspace paths must never fall back to another
+                # folder's same-name file. Match paths case-sensitively.
+                path = label.removeprefix("/")
+                candidates = paths.get(path, set()) if path.lower().endswith(".md") else stems.get(path, set())
+            else:
+                key = label.casefold()
+                candidates = local_names.get((link["folder_id"], key), set()) or names.get(key, set())
+            if len(candidates) == 1:
                 connection.execute(
-                    "UPDATE note_links SET target_id = ? WHERE rowid = ?", (target, link["rowid"])
+                    "UPDATE note_links SET target_id = ? WHERE rowid = ?", (next(iter(candidates)), link["rowid"])
                 )
 
     def create_session(self, ttl: int) -> str:

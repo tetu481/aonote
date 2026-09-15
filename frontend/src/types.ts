@@ -40,6 +40,7 @@ export type SearchResult = {
   title: string;
   filename: string;
   snippet: string;
+  snippet_parts?: Array<{ text: string; highlight: boolean }>;
   rank: number;
   updated_at: number;
 };

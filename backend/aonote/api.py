@@ -35,7 +35,7 @@ class NoteUpdate(BaseModel):
     content: Optional[str] = None
     filename: Optional[str] = Field(default=None, min_length=1, max_length=180)
     folder_id: Optional[str] = None
-    version: Optional[int] = None
+    version: int = Field(ge=1, strict=True)
 
 
 class NoteLocation(BaseModel):
@@ -47,9 +47,8 @@ class NoteLocation(BaseModel):
 def create_api_router(settings: Settings, db: Database) -> APIRouter:
     router = APIRouter(prefix="/api")
 
-    def require_user(
-        request: Request,
-        authorization: Optional[str] = Header(default=None),
+    def authenticate(
+        request: Request, authorization: Optional[str], required_scope: str,
     ) -> Dict[str, Any]:
         if settings.dev_bypass_auth:
             return {"kind": "browser", "actor_name": "管理者", "client_name": None}
@@ -57,12 +56,20 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
             return {"kind": "browser", "actor_name": "管理者", "client_name": None}
         token = bearer_token(authorization)
         principal = (
-            validate_oauth_token(db, token, settings.mcp_resource, "notes:read")
+            validate_oauth_token(db, token, settings.mcp_resource)
             if token else None
         )
         if principal:
+            if required_scope not in principal["scopes"]:
+                raise HTTPException(status_code=403, detail=f"{required_scope} scope required")
             return {"kind": "oauth", **principal}
         raise HTTPException(status_code=401, detail="Authentication required")
+
+    def require_user(request: Request, authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+        return authenticate(request, authorization, "notes:read")
+
+    def require_search(request: Request, authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+        return authenticate(request, authorization, "notes:search")
 
     def require_write(principal: Dict[str, Any]) -> None:
         if principal["kind"] == "oauth" and "notes:write" not in principal["scopes"]:
@@ -168,6 +175,8 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
             ) from exc
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code=409, detail="同じ名前のノートがあります") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if not note:
             raise HTTPException(status_code=404, detail="Note not found")
         return note
@@ -285,13 +294,20 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         folder_id: str, principal: Dict[str, Any] = Depends(require_user)
     ) -> Response:
         require_write(principal)
-        if not db.delete_folder(folder_id):
+        try:
+            deleted = db.delete_folder(folder_id)
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="配下または未整理に同名のノートがあるため、削除できません。先にノート名を変更してください。",
+            ) from exc
+        if not deleted:
             raise HTTPException(status_code=404, detail="Folder not found")
         return Response(status_code=204)
 
     @router.get("/search")
     def search(
-        q: str = "", limit: int = 20, _: Dict[str, Any] = Depends(require_user)
+        q: str = "", limit: int = 20, _: Dict[str, Any] = Depends(require_search)
     ) -> Any:
         return {"query": q, "results": db.search(q, max(1, min(limit, 50)))}
 

@@ -20,6 +20,13 @@ export const en = {
   },
   app: {
     loading: "Opening aonote",
+    startupError: {
+      title: "Could not load the workspace",
+      description: "This does not mean your notes are gone. Check the server and your connection, then try again.",
+      network: "Could not connect to the server.",
+      http: (status: number) => `Server error (HTTP ${status})`,
+      retry: "Retry loading",
+    },
     saveState: {
       idle: "",
       dirty: "Unsaved",

@@ -23,10 +23,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     let body: unknown = null;
+    const raw = await response.text();
     try {
-      body = await response.json();
+      body = JSON.parse(raw);
     } catch {
-      body = await response.text();
+      body = raw;
     }
     throw new ApiError(response.status, body);
   }
