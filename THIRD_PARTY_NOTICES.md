@@ -2,7 +2,7 @@
 
 aonoteは、以下を含む第三者のオープンソースソフトウェアとWebフォントを利用しています。各コンポーネントには、aonote本体とは別に、それぞれの著作権表示とライセンス条件が適用されます。
 
-この一覧は、`package-lock.json`、`pyproject.toml`、インストール済みパッケージに同梱されたライセンス情報を基に、2026年8月10日時点で確認したものです。
+この一覧は、`package-lock.json`、`pyproject.toml`、インストール済みパッケージに同梱されたライセンス情報を基に作成しました。初回確認は2026年8月10日、Mermaidと関連する推移的依存関係の更新確認は2026年10月21日です。
 
 ## 実行時の直接依存関係
 
@@ -14,7 +14,7 @@ aonoteは、以下を含む第三者のオープンソースソフトウェア�
 | React | 18.3.1 | MIT | <https://github.com/facebook/react> |
 | React DOM | 18.3.1 | MIT | <https://github.com/facebook/react> |
 | Lucide React | 0.468.0 | ISC | <https://github.com/lucide-icons/lucide> |
-| Mermaid | 11.16.1 | MIT | <https://github.com/mermaid-js/mermaid> |
+| Mermaid | 12.2.0 | MIT | <https://github.com/mermaid-js/mermaid> |
 | react-markdown | 9.1.0 | MIT | <https://github.com/remarkjs/react-markdown> |
 | remark-gfm | 4.0.1 | MIT | <https://github.com/remarkjs/remark-gfm> |
 
@@ -42,6 +42,17 @@ aonoteは、以下を含む第三者のオープンソースソフトウェア�
 フロントエンドの実行時依存関係は、MIT、ISC、BSD-3-Clause、Apache-2.0、Unlicenseを中心とする許容的ライセンスで構成されています。Mermaidが利用するDOMPurifyは`(MPL-2.0 OR Apache-2.0)`のデュアルライセンスであり、本プロジェクトではApache-2.0の選択肢に基づいて扱います。
 
 代表的な推移的依存関係には、D3（主にISC）、DOMPurify（Apache-2.0またはMPL-2.0）、KaTeX（MIT）、Cytoscape.js（MIT）、Chevrotain Types（Apache-2.0）があります。完全なパッケージ名と固定バージョンは`package-lock.json`を参照してください。Python側の推移的依存関係は、各パッケージの`.dist-info/licenses`または同梱ライセンスファイルを参照してください。
+
+2026年10月21日に更新・追加した主な推移的依存関係は以下のとおりです。
+
+| コンポーネント | 確認バージョン | 用途 | ライセンス |
+|---|---:|---|---|
+| DOMPurify | 3.4.17 | MermaidのSVG・HTMLの無害化 | Apache-2.0またはMPL-2.0（Apache-2.0を選択） |
+| KaTeX | 0.18.10 | Mermaid内の数式表示 | MIT |
+| source-map-js | 1.2.2 | Vite／PostCSSのビルド処理 | BSD-3-Clause |
+| ELKjs | 0.9.3 | MermaidのELKレイアウト | EPL-2.0 |
+
+ELKjsのライセンス本文は[同梱ファイル](frontend/public/assets/elkjs-LICENSE.txt)に収録し、ビルド済み画面からも `/assets/elkjs-LICENSE.txt` で参照できます。ELKjs 0.9.3の公開パッケージに対応するソースコードは <https://github.com/kieler/elkjs/tree/a8304cf79fde75bc2ab1a89d28320f53f8637436>、基盤となるEclipse Layout Kernelは <https://github.com/eclipse-elk/elk> を参照してください。aonoteではELKjs自体のソースコードは変更していません。
 
 ## 再配布時の注意
 

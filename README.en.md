@@ -24,7 +24,7 @@ aonote is a lightweight web workspace where you and AI can work with the same Ma
 
 ## Local Development
 
-Use Python 3.12 or later and either Node.js 20.19 or later, or Node.js 22.12 or later.
+Use Python 3.12 or later and Node.js 22.12 or later.
 
 ```bash
 python -m venv .venv

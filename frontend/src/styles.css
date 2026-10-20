@@ -317,6 +317,8 @@ kbd { font-family: var(--mono); font-size: 11px; border: 0; color: #708299; back
 .document-workarea.view-preview .markdown-body > * { margin-left: 0; margin-right: 0; }
 .mermaid-diagram, .mermaid-loading, .mermaid-error { margin-top: 22px; margin-bottom: 22px; padding: 20px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; background: #f8fbff; }
 .mermaid-diagram svg { width: auto; max-width: 100%; height: auto; display: block; margin: 0 auto; }
+/* Keep math variables visible when a font lacks the Unicode math-italic alphabet. */
+.mermaid-diagram math mi:not([mathvariant]) { text-transform: none; font-style: italic; }
 .document-workarea.view-preview .mermaid-diagram,
 .document-workarea.view-preview .mermaid-loading,
 .document-workarea.view-preview .mermaid-error { width: 100%; max-width: none; margin-left: 0; margin-right: 0; }

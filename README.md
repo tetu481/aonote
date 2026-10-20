@@ -24,7 +24,7 @@ aonoteは、個人とAIが同じMarkdownノートを扱うための軽量なWeb�
 
 ## ローカル開発
 
-Python 3.12以上とNode.js 20.19以上、または22.12以上を利用してください。
+Python 3.12以上とNode.js 22.12以上を利用してください。
 
 ```bash
 python -m venv .venv

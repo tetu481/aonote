@@ -19,6 +19,8 @@ function loadMermaid(): Promise<MermaidApi> {
           primaryTextColor: "#17233a",
           primaryBorderColor: "#76a9df",
           lineColor: "#597491",
+          signalColor: "var(--text)",
+          signalTextColor: "var(--text)",
           secondaryColor: "#eef7ff",
           tertiaryColor: "#fbfdff",
         },
