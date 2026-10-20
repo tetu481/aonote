@@ -54,6 +54,7 @@ export type AppStatus = {
   mcp_ready: boolean;
   auth_bypassed: boolean;
   max_folder_depth: number;
+  workspace_session_hours: number;
 };
 
 export type SaveState = "idle" | "dirty" | "saving" | "saved" | "conflict" | "error";

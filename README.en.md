@@ -19,6 +19,7 @@ aonote is a lightweight web workspace where you and AI can work with the same Ma
 - Note renaming and moving, plus folder creation with a configurable maximum depth
 - Read-only previews of deleted notes, restoration, and permanent deletion after a specified number of days
 - Japanese/English display switching from Settings, saved in the browser
+- Reloading restores the last open note and view mode in the same tab (one hour by default). Missing, expired, or deleted-note sessions fall back to the welcome note for the selected language in preview mode.
 - Choose preview task-checkbox behavior in Settings: read-only (default), toggle only, or toggle with a strikethrough on ON (checked) text. Checkbox changes in preview and split views are autosaved; the strikethrough only affects display. The preference is saved in your browser.
 
 ## Local Development
@@ -51,6 +52,8 @@ docker compose up --build -d
 ```
 
 In production, expose the app over HTTPS through Caddy, nginx, or a similar reverse proxy. `AONOTE_BASE_URL` must exactly match the externally visible HTTPS origin.
+
+Set `AONOTE_WORKSPACE_SESSION_HOURS=1` to configure how long the last open note and view mode are remembered, in whole positive hours (default: one hour). Opening a note, changing its view mode, or reloading renews the expiry. The record is kept in tab-specific `sessionStorage` and ends when the tab closes. This is separate from authentication expiry and does not store unsaved note content.
 
 ## Reliability and Monitoring
 

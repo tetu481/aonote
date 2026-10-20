@@ -22,9 +22,9 @@ import { applyTheme, persistTheme, readStoredTheme, type Theme } from "./theme";
 import { persistPreviewCheckboxMode, readStoredPreviewCheckboxMode, toggleTaskCheckbox, type PreviewCheckboxMode } from "./previewCheckboxes";
 import type { AppStatus, FolderNode, Note, NoteSummary, TrashedNote, TrashedNoteSummary } from "./types";
 import { WELCOME_DEFAULTS } from "./workspaceDefaults";
+import { clearWorkspaceSession, persistWorkspaceSession, readWorkspaceSession, type ViewMode } from "./workspaceSession";
 import "./styles.css";
 
-type ViewMode = "edit" | "split" | "preview";
 const OUTLINE_STORAGE_KEY = "aonote:outline-visible:v1";
 
 function initialOutlineVisible() {
@@ -179,9 +179,27 @@ export default function App() {
       setStatus(nextStatus); setTree(nextTree); setRecent(nextRecent); setTrash(nextTrash); setAuthRequired(false);
       const notes = flattenNotes(nextTree);
       const welcomeFolder = nextTree.find((folder) => folder.name === welcomeDefaults.folderName);
-      const preferred = welcomeFolder?.notes.find((item) => item.filename === welcomeDefaults.noteFilename) ?? notes[0];
+      const session = readWorkspaceSession(nextStatus.workspace_session_hours);
+      if (session && notes.some((item) => item.id === session.noteId)) {
+        try {
+          await selectById(session.noteId, true);
+          setView(session.view);
+          return;
+        } catch (error) {
+          // A deleted note can disappear between the tree and note requests.
+          // Network/auth/storage failures must keep the retryable startup flow.
+          if (!(error instanceof ApiError) || error.status !== 404) throw error;
+        }
+      }
+      clearWorkspaceSession();
+      const available = notes.filter((item) => item.id !== session?.noteId);
+      const preferred = available.find((item) => item.folder_id === welcomeFolder?.id && item.filename === welcomeDefaults.noteFilename) ?? available[0];
+      setView("preview");
       if (preferred) await selectById(preferred.id, true);
-      else setSelectedFolderId(welcomeFolder?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
+      else {
+        showNote(null);
+        setSelectedFolderId(welcomeFolder?.id ?? nextTree.find((folder) => folder.id !== "unfiled")?.id ?? "unfiled");
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) setAuthRequired(true);
       else {
@@ -189,9 +207,15 @@ export default function App() {
         setStartupError({ status: error instanceof ApiError ? error.status : null });
       }
     } finally { setLoading(false); }
-  }, [selectById, welcomeDefaults.folderName, welcomeDefaults.noteFilename]);
+  }, [selectById, showNote, welcomeDefaults.folderName, welcomeDefaults.noteFilename]);
 
   useEffect(() => { void loadApp(); }, [loadApp]);
+  const activeNoteId = note?.id;
+  useEffect(() => {
+    if (loading || authRequired || startupError || (sidebarMode !== "files" && sidebarMode !== "recent")) return;
+    if (activeNoteId) persistWorkspaceSession(activeNoteId, view);
+    else clearWorkspaceSession();
+  }, [activeNoteId, view, loading, authRequired, startupError, sidebarMode]);
   useEffect(() => {
     applyTheme(theme);
     persistTheme(theme);

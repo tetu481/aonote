@@ -116,6 +116,7 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
             "mcp_ready": True,
             "auth_bypassed": settings.dev_bypass_auth,
             "max_folder_depth": settings.max_folder_depth,
+            "workspace_session_hours": settings.workspace_session_hours,
         }
 
     @router.get("/tree")

@@ -283,6 +283,8 @@ test("設定画面で日本語と英語を切り替えて保存できる", async
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.screenshot({ path: `${screenshotDir}/aonote-settings-english-desktop.png`, fullPage: false });
 
+  // First-visit welcome selection is language-specific when no tab session exists.
+  await page.evaluate(() => sessionStorage.removeItem("aonote:workspace-session:v1"));
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByLabel("Markdown preview")).toBeVisible();
@@ -306,6 +308,7 @@ test("設定画面で日本語と英語を切り替えて保存できる", async
   await expect(page.locator("html")).toHaveAttribute("lang", "ja");
   await expect(page.getByRole("heading", { name: "設定", exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => localStorage.getItem("aonote:locale:v1"))).toBe("ja");
+  await page.evaluate(() => sessionStorage.removeItem("aonote:workspace-session:v1"));
   await page.reload();
   await expect(page.locator(".breadcrumb")).toContainText("01-ようこそ.md");
   expect(browserIssues).toEqual([]);

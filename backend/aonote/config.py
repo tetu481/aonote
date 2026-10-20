@@ -29,6 +29,7 @@ class Settings:
     session_ttl: int = 604800
     min_free_disk_mb: int = 100
     monitor_interval_seconds: int = 60
+    workspace_session_hours: int = 1
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -49,6 +50,9 @@ class Settings:
             ),
             monitor_interval_seconds=_as_positive_int(
                 os.getenv("AONOTE_MONITOR_INTERVAL_SECONDS", ""), 60
+            ),
+            workspace_session_hours=_as_positive_int(
+                os.getenv("AONOTE_WORKSPACE_SESSION_HOURS", ""), 1
             ),
         )
 

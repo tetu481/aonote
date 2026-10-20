@@ -80,8 +80,8 @@ test("既定は編集不可で、設定で有効化するとノート切替前�
   expect((await readNote(request, b)).content).toBe(b.content);
   await page.reload();
   await expect(page.getByLabel("Markdownプレビュー")).toBeVisible();
+  await expect(page.locator(".breadcrumb strong")).toHaveText(b.filename);
   await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), storageKey)).toBe("toggle");
-  await page.getByRole("button", { name: a.filename.slice(2, -3), exact: true }).click();
   await page.getByRole("button", { name: a.filename, exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "タスク: First task", exact: true })).toBeChecked();
   await selectMode(page, "readonly");
@@ -180,7 +180,10 @@ for (const status of [503, 409]) {
     await page.route(`**/api/notes/${a.id}`, (route) => route.request().method() === "PATCH" && fail
       ? route.fulfill({ status, json: { detail: "Simulated save failure" } }) : route.continue());
     const first = page.getByRole("checkbox", { name: "タスク: First task", exact: true });
-    await first.check();
+    // Preview rendering is deferred; wait for the rendered state after the click.
+    await expect(first).not.toBeChecked();
+    await first.click();
+    await expect(first).toBeChecked();
     await expect(page.locator(".save-state")).toHaveText(status === 409 ? "更新の競合" : "保存エラー");
     await page.getByRole("button", { name: b.filename, exact: true }).click();
     await expect(page.locator(".document-error")).toBeVisible();
