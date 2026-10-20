@@ -83,6 +83,7 @@ export const en = {
     contentLabel: "Markdown content",
   },
   preview: {
+    taskCheckbox: (label: string) => label ? `Task: ${label}` : "Task checkbox",
     regionLabel: "Markdown preview",
     alerts: {
       note: "Note",
@@ -198,7 +199,7 @@ export const en = {
     purge: "Delete permanently",
     emptyTrash: "Trash is empty",
     appearance: "Preferences",
-    appearanceDescription: "Theme and language",
+    appearanceDescription: "Theme, language and preview",
     trashCount: (count: number) => `${count} ${count === 1 ? "item" : "items"}`,
     preferences: "Preferences",
     noteCount: (count: number) => `${count} ${count === 1 ? "note" : "notes"}`,
@@ -211,7 +212,7 @@ export const en = {
     appearance: "Appearance",
     backToNote: "Back to note",
     eyebrow: "SETTINGS",
-    description: "Choose your display theme and language. Settings are saved in this browser.",
+    description: "Choose your theme, language and preview behavior. Settings are saved in this browser.",
     themeTitle: "Theme",
     themeDescription: "Change the color theme used throughout aonote.",
     themeGroupLabel: "Display theme",
@@ -225,6 +226,13 @@ export const en = {
     languages: {
       ja: { label: "日本語", description: "Display aonote in Japanese" },
       en: { label: "English", description: "Display aonote in English" },
+    },
+    previewCheckboxTitle: "Preview checkboxes",
+    previewCheckboxDescription: "Applies to Markdown task lists. Changes are saved to the note automatically.",
+    previewCheckboxModes: {
+      readonly: { label: "Do not edit (default)", description: "Checkboxes cannot be changed in the preview." },
+      toggle: { label: "Edit checkboxes only", description: "Toggle checkboxes in preview and split views." },
+      "toggle-strikethrough": { label: "Edit and strike through checked text", description: "Toggle checkboxes and show a strikethrough on ON (checked) items." },
     },
     savedAutomatically: "Settings are saved automatically",
     currentTheme: (label: string) => `Theme: ${label}`,

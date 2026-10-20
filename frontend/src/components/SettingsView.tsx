@@ -1,15 +1,18 @@
 import { ArrowLeft, Check, MoonStar, Settings2, Sun } from "lucide-react";
 import { useLocale } from "../LocaleContext";
 import { SUPPORTED_LOCALES } from "../locales";
+import { PREVIEW_CHECKBOX_MODES, type PreviewCheckboxMode } from "../previewCheckboxes";
 import type { Theme } from "../theme";
 
 type Props = {
   theme: Theme;
   onTheme: (theme: Theme) => void;
+  previewCheckboxMode: PreviewCheckboxMode;
+  onPreviewCheckboxMode: (mode: PreviewCheckboxMode) => void;
   onClose: () => void;
 };
 
-export function SettingsView({ theme, onTheme, onClose }: Props) {
+export function SettingsView({ theme, onTheme, previewCheckboxMode, onPreviewCheckboxMode, onClose }: Props) {
   const { locale, setLocale, text: uiText } = useLocale();
   const themes = [
     { id: "light", ...uiText.settings.themes.light, Icon: Sun },
@@ -19,7 +22,7 @@ export function SettingsView({ theme, onTheme, onClose }: Props) {
   return <>
     <header className="document-bar settings-document-bar">
       <div className="settings-breadcrumb"><Settings2 size={17} /><strong>{uiText.settings.breadcrumb}</strong><span>/</span><span>{uiText.settings.preferences}</span></div>
-      <button className="secondary-button settings-back-button" onClick={onClose}><ArrowLeft size={16} /><span>{uiText.settings.backToNote}</span></button>
+      <button className="secondary-button settings-back-button" onClick={onClose} aria-label={uiText.settings.backToNote}><ArrowLeft size={16} /><span>{uiText.settings.backToNote}</span></button>
     </header>
     <div className="settings-scroll">
       <section className="settings-page" aria-labelledby="settings-title">
@@ -58,6 +61,21 @@ export function SettingsView({ theme, onTheme, onClose }: Props) {
                 <span className="theme-option-copy"><strong>{option.label}</strong><small>{option.description}</small></span>
                 <span className="theme-option-check" aria-hidden="true">{selected ? <Check size={16} /> : null}</span>
               </button>;
+            })}
+          </div>
+        </section>
+        <section className="settings-section" aria-labelledby="preview-checkbox-heading">
+          <div className="settings-section-heading">
+            <div><h2 id="preview-checkbox-heading">{uiText.settings.previewCheckboxTitle}</h2><p>{uiText.settings.previewCheckboxDescription}</p></div>
+          </div>
+          <div className="preview-checkbox-options" role="radiogroup" aria-labelledby="preview-checkbox-heading">
+            {PREVIEW_CHECKBOX_MODES.map((id) => {
+              const option = uiText.settings.previewCheckboxModes[id];
+              const selected = previewCheckboxMode === id;
+              return <label key={id} className={`preview-checkbox-option ${selected ? "selected" : ""}`}>
+                <input type="radio" name="preview-checkbox-mode" value={id} checked={selected} onChange={() => onPreviewCheckboxMode(id)} />
+                <span className="theme-option-copy"><strong>{option.label}</strong><small>{option.description}</small></span>
+              </label>;
             })}
           </div>
         </section>

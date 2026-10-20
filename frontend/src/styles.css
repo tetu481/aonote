@@ -295,6 +295,11 @@ kbd { font-family: var(--mono); font-size: 11px; border: 0; color: #708299; back
 .markdown-body p { margin-top: 0; margin-bottom: 16px; }
 .markdown-body ul, .markdown-body ol { padding-left: 26px; }
 .markdown-body li { margin: 5px 0; }
+.markdown-body .task-item-text { display: inline; }
+.markdown-body.tasks-strike-checked .task-list-item[data-task-checked="true"] > .task-item-text { text-decoration: line-through; }
+.markdown-body input[type="checkbox"] { accent-color: var(--blue); }
+.markdown-body input[type="checkbox"]:not(:disabled) { cursor: pointer; }
+.markdown-body input[type="checkbox"]:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .markdown-body a { color: var(--blue); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .markdown-body .wikilink { padding: 1px 4px; border-radius: 4px; background: var(--blue-pale); text-decoration: none; }
 .markdown-body code { padding: 2px 5px; border-radius: 4px; color: #075cbf; background: #edf5fd; font-family: var(--mono); font-size: .9em; }
@@ -426,6 +431,12 @@ kbd { font-family: var(--mono); font-size: 11px; border: 0; color: #708299; back
 .theme-option-copy small { color: var(--muted); font-size: 10px; line-height: 1.55; }
 .theme-option-check { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--border-strong); border-radius: 50%; color: transparent; }
 .theme-option.selected .theme-option-check, .language-option.selected .theme-option-check { color: #fff; border-color: var(--blue); background: var(--blue); }
+.preview-checkbox-options { display: grid; gap: 10px; margin-top: 22px; }
+.preview-checkbox-option { min-width: 0; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); background: var(--surface-strong); cursor: pointer; }
+.preview-checkbox-option.selected { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 8%, var(--surface-strong)); }
+.preview-checkbox-option:hover { border-color: var(--border-strong); }
+.preview-checkbox-option:focus-within { outline: 2px solid var(--blue); outline-offset: 3px; }
+.preview-checkbox-option input { width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--blue); }
 .settings-statusbar > span:first-child { display: flex; align-items: center; gap: 8px; }
 .settings-statusbar i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .settings-nav-row { width: 100%; display: flex; align-items: flex-start; gap: 9px; padding: 10px 8px; border: 0; border-radius: 8px; color: var(--text); background: transparent; text-align: left; cursor: pointer; }

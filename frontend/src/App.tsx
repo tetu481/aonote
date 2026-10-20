@@ -19,6 +19,7 @@ import { useLocale } from "./LocaleContext";
 import { useAutosave } from "./hooks/useAutosave";
 import { flattenNotes, folderContainsFolder } from "./folderUtils";
 import { applyTheme, persistTheme, readStoredTheme, type Theme } from "./theme";
+import { persistPreviewCheckboxMode, readStoredPreviewCheckboxMode, toggleTaskCheckbox, type PreviewCheckboxMode } from "./previewCheckboxes";
 import type { AppStatus, FolderNode, Note, NoteSummary, TrashedNote, TrashedNoteSummary } from "./types";
 import { WELCOME_DEFAULTS } from "./workspaceDefaults";
 import "./styles.css";
@@ -45,6 +46,7 @@ export default function App() {
   const [content, setContent] = useState("");
   const [view, setView] = useState<ViewMode>("preview");
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
+  const [previewCheckboxMode, setPreviewCheckboxMode] = useState<PreviewCheckboxMode>(readStoredPreviewCheckboxMode);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("files");
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [desktopSidebar, setDesktopSidebar] = useState(true);
@@ -142,6 +144,11 @@ export default function App() {
     setContent(next);
   };
 
+  const togglePreviewTask = (source: string, offset: number, checked: boolean) => {
+    if (previewCheckboxMode === "readonly" || pendingDocumentActions.current || source !== content) return;
+    changeContent(toggleTaskCheckbox(content, offset, checked));
+  };
+
   const selectById = useCallback(async (id: string, propagateError = false) => {
     updateSidebarMode("files");
     setDesktopSidebar(true);
@@ -189,6 +196,7 @@ export default function App() {
     applyTheme(theme);
     persistTheme(theme);
   }, [theme]);
+  useEffect(() => { persistPreviewCheckboxMode(previewCheckboxMode); }, [previewCheckboxMode]);
   useEffect(() => {
     try { window.localStorage.setItem(OUTLINE_STORAGE_KEY, String(outlineVisible)); }
     catch { /* Continue rendering when localStorage is unavailable. */ }
@@ -405,7 +413,7 @@ export default function App() {
         {mobileSidebar ? <button className="sidebar-scrim" aria-label={uiText.app.sidebarClose} onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
           {documentError ? <div className="document-error" role="alert"><span>{documentError}</span>{saveState === "error" || saveState === "conflict" ? <button onClick={() => void withSavedNote(async () => {}).catch(() => {})} disabled={documentBusy}>{uiText.app.retrySave}</button> : null}</div> : null}
-          {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
+          {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} previewCheckboxMode={previewCheckboxMode} onPreviewCheckboxMode={setPreviewCheckboxMode} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
             <header className="document-bar">
               <div className="breadcrumb-group">
                 <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id} data-full-name={folder.name} tabIndex={0}>{folder.name}<b>/</b></span>) : <span>{uiText.common.unfiled}<b>/</b></span>}<strong data-full-name={note.filename} tabIndex={0}>{note.filename}</strong></div>
@@ -425,7 +433,7 @@ export default function App() {
             <div className="mobile-tabs"><button className={view !== "preview" ? "active" : ""} onClick={() => setView("edit")}>{uiText.app.toolbar.edit}</button><button className={view === "preview" ? "active" : ""} onClick={() => setView("preview")}>{uiText.app.toolbar.preview}</button></div>
             <div className={`document-workarea view-${view} ${outlineVisible ? "" : "outline-hidden"}`} id="preview">
               {view !== "preview" ? <EditorPane content={content} onChange={changeContent} readOnly={documentBusy} /> : null}
-              {view !== "edit" ? <PreviewPane content={content} links={note.links} onWikilink={selectById} /> : null}
+              {view !== "edit" ? <PreviewPane key={note.id} content={content} links={note.links} onWikilink={selectById} checkboxMode={previewCheckboxMode} readOnly={documentBusy} onToggleTask={togglePreviewTask} /> : null}
               {outlineOpen ? <button className="outline-scrim" aria-label={uiText.app.toolbar.closeOutlineOutside} onClick={() => setOutlineOpen(false)} /> : null}
               <Outline note={{ ...note, content }} drawerOpen={outlineOpen} desktopVisible={outlineVisible} onClose={() => setOutlineOpen(false)} onBacklink={(id) => void selectById(id)} />
             </div>

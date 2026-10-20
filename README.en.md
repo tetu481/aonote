@@ -19,6 +19,7 @@ aonote is a lightweight web workspace where you and AI can work with the same Ma
 - Note renaming and moving, plus folder creation with a configurable maximum depth
 - Read-only previews of deleted notes, restoration, and permanent deletion after a specified number of days
 - Japanese/English display switching from Settings, saved in the browser
+- Choose preview task-checkbox behavior in Settings: read-only (default), toggle only, or toggle with a strikethrough on ON (checked) text. Checkbox changes in preview and split views are autosaved; the strikethrough only affects display. The preference is saved in your browser.
 
 ## Local Development
 

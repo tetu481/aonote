@@ -81,6 +81,7 @@ export const ja = {
     contentLabel: "Markdown本文",
   },
   preview: {
+    taskCheckbox: (label: string) => label ? `タスク: ${label}` : "タスクのチェックボックス",
     regionLabel: "Markdownプレビュー",
     alerts: {
       note: "Note",
@@ -196,7 +197,7 @@ export const ja = {
     purge: "完全削除",
     emptyTrash: "ゴミ箱は空です",
     appearance: "表示設定",
-    appearanceDescription: "テーマ・言語",
+    appearanceDescription: "テーマ・言語・プレビュー",
     trashCount: (count: number) => `${count} 件`,
     preferences: "環境設定",
     noteCount: (count: number) => `${count} ノート`,
@@ -209,7 +210,7 @@ export const ja = {
     appearance: "外観",
     backToNote: "ノートに戻る",
     eyebrow: "SETTINGS",
-    description: "表示テーマと言語を選択できます。設定はこのブラウザに保存されます。",
+    description: "表示テーマ、言語、プレビューの操作を選択できます。設定はこのブラウザに保存されます。",
     themeTitle: "テーマ",
     themeDescription: "aonote全体のカラーテーマを切り替えます。",
     themeGroupLabel: "画面テーマ",
@@ -223,6 +224,13 @@ export const ja = {
     languages: {
       ja: { label: "日本語", description: "日本語で表示します" },
       en: { label: "English", description: "英語で表示します" },
+    },
+    previewCheckboxTitle: "プレビューのチェックボックス",
+    previewCheckboxDescription: "Markdownのタスクリストに適用します。変更はノートに自動保存されます。",
+    previewCheckboxModes: {
+      readonly: { label: "編集しない（デフォルト）", description: "プレビューではチェックボックスを変更しません。" },
+      toggle: { label: "チェックボックスだけ編集する", description: "プレビュー・分割表示でON／OFFを切り替えられます。" },
+      "toggle-strikethrough": { label: "編集する＋ONの文字に取り消し線", description: "ON／OFFを切り替えられ、ON（チェック済み）の項目の文字に取り消し線を表示します。" },
     },
     savedAutomatically: "設定は自動的に保存されます",
     currentTheme: (label: string) => `テーマ: ${label}`,
