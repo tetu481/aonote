@@ -276,7 +276,13 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         query = {"code": code}
         if state:
             query["state"] = state
-        return RedirectResponse(f"{redirect_uri}?{urlencode(query)}", status_code=303)
+        # Preserve the registered URI's query exactly, including repeated keys
+        # and encoding, and append the authorization response before a fragment.
+        redirect = urlparse(redirect_uri)
+        response_query = urlencode(query)
+        if redirect.query:
+            response_query = f"{redirect.query}&{response_query}"
+        return RedirectResponse(redirect._replace(query=response_query).geturl(), status_code=303)
 
     @router.post("/oauth/token")
     def issue_token(

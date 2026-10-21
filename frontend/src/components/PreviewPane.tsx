@@ -68,9 +68,12 @@ type Props = {
 
 export function PreviewPane({ content, links, onWikilink, checkboxMode = "readonly", readOnly = false, onToggleTask }: Props) {
   const uiText = useUiText();
-  const deferred = useDeferredValue(content);
-  const markdown = useMemo(() => prepareMarkdown(deferred), [deferred]);
-  const editable = checkboxMode !== "readonly" && !readOnly && Boolean(onToggleTask) && deferred === content;
+  const deferredContent = useDeferredValue(checkboxMode === "readonly" ? content : null);
+  // Controlled checkboxes must use the current source in the change event's
+  // render; deferring it lets React restore their previous checked state.
+  const previewContent = checkboxMode === "readonly" ? deferredContent ?? content : content;
+  const markdown = useMemo(() => prepareMarkdown(previewContent), [previewContent]);
+  const editable = checkboxMode !== "readonly" && !readOnly && Boolean(onToggleTask) && previewContent === content;
   const linkTargets = useMemo(
     () => new Map(links.flatMap((link) => link.id ? [[link.target, link.id] as const] : [])),
     [links],
@@ -90,13 +93,13 @@ export function PreviewPane({ content, links, onWikilink, checkboxMode = "readon
   const toggleTask = (event: ChangeEvent<HTMLElement>) => {
     const input = event.target;
     if (!editable || !(input instanceof HTMLInputElement) || input.type !== "checkbox" || !input.hasAttribute("data-task-offset")) return;
-    onToggleTask?.(deferred, Number(input.dataset.taskOffset), input.checked);
+    onToggleTask?.(previewContent, Number(input.dataset.taskOffset), input.checked);
   };
   return (
     <article className={`preview-pane markdown-body${checkboxMode === "toggle-strikethrough" ? " tasks-strike-checked" : ""}`} aria-label={uiText.preview.regionLabel} onClick={followWikilink} onChange={toggleTask}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkAlerts, remarkHeadingIds]}
-        rehypePlugins={[[rehypeTaskCheckboxes, { source: deferred, sourceOffset: markdown.sourceOffset, editable, checkboxLabel: uiText.preview.taskCheckbox }]]}
+        rehypePlugins={[[rehypeTaskCheckboxes, { source: previewContent, sourceOffset: markdown.sourceOffset, editable, checkboxLabel: uiText.preview.taskCheckbox }]]}
         components={markdownComponents}
       >{markdown.content}</ReactMarkdown>
     </article>

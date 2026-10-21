@@ -41,6 +41,8 @@ export const ja = {
       saveConflict: "他の利用者による更新と競合したため、操作を中止しました。編集内容はこの画面に保持されています。本文をコピーしてからページを再読み込みし、変更内容を確認してください。",
     },
     retrySave: "保存を再試行",
+    refreshWarning: "変更は保存済みですが、表示の更新に失敗しました。操作を繰り返さず、表示を再読み込みしてください。",
+    retryRefresh: "表示を再読み込み",
     deleteFolderConfirmation: (name: string, noteCount: number) => `「${name}」と配下のフォルダを削除しますか？\n配下のノート${noteCount}件は削除せず「未整理」へ移動します。`,
     deleteNoteConfirmation: (title: string) => `「${title}」を削除しますか？`,
     purgeTrashConfirmation: (days: number) => `ゴミ箱の${days}日以上経過したノートを完全に削除しますか？\nこの操作は取り消せません。`,

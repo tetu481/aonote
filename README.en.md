@@ -58,6 +58,7 @@ Set `AONOTE_WORKSPACE_SESSION_HOURS=1` to configure how long the last open note 
 ## Reliability and Monitoring
 
 - Switching notes or replacing editor content waits for autosave to finish. If saving fails, the operation stops and your draft stays on screen so you can retry saving. For update conflicts, copy your unsaved text before reloading the page, then merge it with the server-side changes. Unsaved drafts do not persist after the browser is closed.
+- If creating, changing, or restoring an item succeeds but refreshing the display fails, a notice confirms that the change was saved and offers a refresh button. Do not repeat the operation. Refreshing also saves pending edits first, and delayed older list responses cannot overwrite the latest tree.
 - Consuming an OAuth authorization code or refresh token and storing the new tokens commit in one transaction. Storage failures roll back the entire exchange, and concurrent exchanges cannot reuse the same code or token.
 - Note updates acquire a writer lock before checking the version, then update content and the search index together. On a version conflict, read the note again and reapply the change. Browser and MCP database operations run in worker threads so database waits do not block the event loop.
 - `/healthz` checks liveness. `/readyz` checks database reads and writer-lock acquisition, frontend deployment, and free space on the database filesystem, returning HTTP 503 on failure. It does not replace a full database integrity check or backups.
@@ -81,6 +82,7 @@ Docker disables Uvicorn's standard access log, which includes query strings. For
 
 - Updates and moves cannot create duplicate filenames in the same destination, including Unfiled. Deleting a folder also checks for collisions with Unfiled or between its descendant folders before moving any notes. On a collision, the entire operation is rejected with HTTP 409; rename the conflicting notes first. Existing filenames are never automatically changed.
 - `[[Projects/guide.md]]` and `[[Projects/guide]]` are workspace-relative paths. Folder-qualified paths are case-sensitive and never fall back to another folder's same-name note. Bare Wiki links prefer the source folder, then resolve globally only when there is exactly one candidate. Use an explicit path to disambiguate a link.
+- Preview leaves `[[…]]` inside code blocks and inline code unchanged instead of converting it to a Wiki link. Mermaid syntax such as `A[[Process]]` is passed through for diagram rendering.
 - REST `PATCH /api/notes/{note_id}` requires the positive integer `version` returned when the note was read. Missing or invalid versions return HTTP 422, update conflicts return 409, and invalid filenames return 400. The browser and MCP already send versions.
 - OAuth access to `GET /api/search` requires `notes:search`, just like MCP `search_notes`; `notes:read` alone does not permit searching. The `snippet` response escapes HTML except for generated highlights, and the browser safely renders the text and highlights in `snippet_parts`.
 
@@ -135,6 +137,8 @@ In addition to the existing `filename` and `folder_id` parameters, `create_note`
 ```
 
 Notes deleted with the MCP `delete_note` tool also go to the trash. Restoration and permanent deletion are available only in the browser.
+
+The server validates required MCP arguments, types, and bounds as well. Omitting `content` from `update_note` or `folder_id` from `move_note` returns an error without changing the note. Explicitly pass `content: ""` to empty a note, or `folder_id: null` to move it to Unfiled. For update tools, pass the positive integer `version` returned when reading the note; strings, fractions, and booleans are rejected.
 
 ### MCP Client Argument Validation Errors
 

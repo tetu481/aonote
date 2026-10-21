@@ -43,6 +43,8 @@ export const en = {
       saveConflict: "The operation was cancelled because another client updated this note. Your edits are still on this screen. Copy your text before reloading the page to review the changes.",
     },
     retrySave: "Retry save",
+    refreshWarning: "Your changes were saved, but the display could not be refreshed. Refresh the display instead of repeating the operation.",
+    retryRefresh: "Refresh display",
     deleteFolderConfirmation: (name: string, noteCount: number) => `Delete “${name}” and its subfolders?\n${noteCount} ${noteCount === 1 ? "note" : "notes"} inside will be moved to “Unfiled” without being deleted.`,
     deleteNoteConfirmation: (title: string) => `Delete “${title}”?`,
     purgeTrashConfirmation: (days: number) => `Permanently delete notes that have been in Trash for ${days} ${days === 1 ? "day" : "days"} or more?\nThis action cannot be undone.`,

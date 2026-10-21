@@ -91,3 +91,55 @@ test("Mermaidのラベルとリンクをstrict設定で無害化する", async (
   expect(hrefs.every((href) => !/^\s*javascript:/i.test(href))).toBeTruthy();
   expect(await page.evaluate(() => (window as Window & { __mermaidSecurityProbe?: number }).__mermaidSecurityProbe)).toBeUndefined();
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`Wikiリンクはコード内を置換せずMermaidのサブルーチンと後続タスクを維持する (${theme})`, async ({ page, request }) => {
+    const targetName = `wiki-target-${crypto.randomUUID().slice(0, 8)}.md`;
+    const target = await request.post("/api/notes", { data: { filename: targetName, content: "# Actual Wiki target" } });
+    expect(target.ok()).toBeTruthy();
+    await page.addInitScript((value) => {
+      localStorage.setItem("aonote:theme:v1", value);
+      localStorage.setItem("aonote:preview-checkboxes:v1", "toggle");
+    }, theme);
+    const literal = `[[${targetName}]]`;
+    const markdown = [
+      `## [[${targetName}|通常のWikiリンク]]`, "",
+      `Inline: \`${literal}\` and \`\`code \` ${literal}\`\``, "",
+      "```mermaid", "flowchart LR", "  A[[内部処理]] --> B[完了]", "```", "",
+      "~~~markdown", literal, "~~~", "",
+      `    ${literal}`, "",
+      `> \`\`\`text`, `> ${literal}`, "> ```", "",
+      `[[${targetName}|別のWikiリンク]]`, "",
+      "- [ ] 後続タスク", "",
+    ].join("\r\n");
+    await openDiagramNote(page, request, markdown);
+    const filename = await page.locator(".breadcrumb strong").textContent();
+    const before = await (await request.get("/api/tree")).json();
+    const source = before.find((folder: { id: string }) => folder.id === "unfiled").notes.find((note: { filename: string }) => note.filename === filename);
+    const preview = page.getByLabel("Markdownプレビュー");
+    await expect(preview.locator(".mermaid-diagram svg")).toBeVisible();
+    await expect(preview.locator(".mermaid-diagram")).toContainText("内部処理");
+    await expect(preview.locator(".mermaid-error")).toHaveCount(0);
+    await expect(preview.locator("a.wikilink")).toHaveCount(2);
+    await expect(preview.locator("code")).toHaveText([literal, `code \` ${literal}`, literal, literal, literal]);
+    await expect(page.locator("#note-outline nav a").filter({ hasText: "通常のWikiリンク" })).toHaveCount(1);
+    const task = preview.getByRole("checkbox", { name: "タスク: 後続タスク", exact: true });
+    await task.check();
+    await expect(task).toBeChecked();
+    await expect.poll(async () => (await (await request.get(`/api/notes/${source.id}`)).json()).content).toBe(source.content.replace("- [ ] 後続タスク", "- [x] 後続タスク"));
+    await screenshot(page, `subroutine-${theme}-desktop`);
+    await page.locator('.view-switch button[title="分割"]').click();
+    // Textarea DOM values normalize CRLF to LF; the stored source above must not.
+    await expect(page.getByLabel("Markdown本文")).toHaveValue(source.content.replace("- [ ] 後続タスク", "- [x] 後続タスク").replace(/\r\n/g, "\n"));
+    await expect(preview.locator(".mermaid-diagram svg")).toBeVisible();
+    if (theme === "dark") {
+      await page.locator('.view-switch button[title="プレビュー"]').click();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await preview.locator(".mermaid-diagram").scrollIntoViewIfNeeded();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+      await screenshot(page, "subroutine-dark-mobile");
+    }
+    await preview.getByRole("link", { name: "通常のWikiリンク", exact: true }).click();
+    await expect(page.locator(".breadcrumb strong")).toHaveText(targetName);
+  });
+}

@@ -1,15 +1,19 @@
+import base64
+import hashlib
 import html
 import re
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from threading import Barrier
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
 
 from aonote.application import create_app
 from aonote.config import Settings
+from aonote.mcp import TOOLS
 from aonote.security import now_ts, token_hash
 
 
@@ -250,3 +254,124 @@ def test_deleted_notes_do_not_prevent_name_reuse(app):
     assert renamed["filename"] == "reusable.md"
     with pytest.raises(sqlite3.IntegrityError):
         db.restore_note(old["id"])
+
+
+def valid_tool_arguments(name, note):
+    return {
+        "get_note": {"note_id": note["id"]},
+        "create_folder": {"name": "Must not be created"},
+        "search_notes": {"query": "Original"},
+        "create_note": {"path": "Must not exist/new.md", "content": "# New"},
+        "update_note": {"note_id": note["id"], "content": "# Updated", "version": note["version"]},
+        "rename_note": {"note_id": note["id"], "filename": "renamed.md", "version": note["version"]},
+        "move_note": {"note_id": note["id"], "folder_id": None, "version": note["version"]},
+        "delete_note": {"note_id": note["id"]},
+        "list_notes": {"limit": 10},
+        "list_folders": {},
+    }[name]
+
+
+def assert_note_unchanged(db, note, tree):
+    assert db.get_note(note["id"]) == note
+    assert db.list_tree() == tree
+    with db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM note_revisions WHERE note_id = ?", (note["id"],)).fetchone()[0] == 0
+        assert connection.execute("SELECT content FROM note_fts WHERE note_id = ?", (note["id"],)).fetchone()[0] == note["content"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name,missing", [
+    (tool["name"], field)
+    for tool in TOOLS for field in tool["inputSchema"].get("required", [])
+])
+async def test_mcp_enforces_all_published_required_arguments(app, client, name, missing):
+    db = app.state.db
+    folder = db.create_folder("Origin")
+    note = db.create_note("original.md", "# Original", folder["id"])
+    tree = db.list_tree()
+    arguments = valid_tool_arguments(name, note)
+    del arguments[missing]
+    response = await client.post("/mcp", headers=access_token(db, "notes:read notes:search notes:write"), json=rpc(name, arguments))
+    assert response.status_code == 200
+    assert response.json()["result"]["isError"] is True
+    assert f"{missing} is required" in response.json()["result"]["content"][0]["text"]
+    assert_note_unchanged(db, note, tree)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("version", [None, False, True, "1", 1.1, 1.9, 0, -1])
+async def test_mcp_updates_reject_nonpositive_or_coerced_versions(app, client, version):
+    db = app.state.db
+    note = db.create_note("original.md", "# Original")
+    tree = db.list_tree()
+    headers = access_token(db, "notes:write")
+    for name in ["update_note", "rename_note", "move_note"]:
+        arguments = {**valid_tool_arguments(name, note), "version": version}
+        response = await client.post("/mcp", headers=headers, json=rpc(name, arguments))
+        assert response.json()["result"]["isError"] is True
+        assert_note_unchanged(db, note, tree)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name,invalid", [
+    ("update_note", {"content": None}), ("update_note", {"content": ["bad"]}),
+    ("update_note", {"filename": 123}), ("move_note", {"folder_id": False}),
+    ("create_note", {"content": None}), ("create_note", {"path": 123}),
+    ("create_folder", {"name": False}), ("create_folder", {"name": ""}),
+    ("get_note", {"note_id": ["bad"]}), ("search_notes", {"query": None}),
+    ("list_notes", {"limit": True}), ("list_notes", {"limit": 0}),
+    ("list_notes", {"limit": 51}),
+])
+async def test_mcp_rejects_wrong_types_and_bounds_without_mutations(app, client, name, invalid):
+    db = app.state.db
+    note = db.create_note("original.md", "# Original")
+    tree = db.list_tree()
+    response = await client.post("/mcp", headers=access_token(db, "notes:read notes:search notes:write"), json=rpc(name, {**valid_tool_arguments(name, note), **invalid}))
+    assert response.json()["result"]["isError"] is True
+    assert_note_unchanged(db, note, tree)
+
+
+@pytest.mark.anyio
+async def test_mcp_allows_explicit_empty_content_and_null_destination(app, client):
+    db = app.state.db
+    folder = db.create_folder("Origin")
+    note = db.create_note("original.md", "# Original", folder["id"])
+    headers = access_token(db, "notes:write")
+    emptied = await client.post("/mcp", headers=headers, json=rpc("update_note", {"note_id": note["id"], "content": "", "version": 1}))
+    assert emptied.json()["result"]["isError"] is False
+    assert db.get_note(note["id"])["content"] == ""
+    moved = await client.post("/mcp", headers=headers, json=rpc("move_note", {"note_id": note["id"], "folder_id": None, "version": 2}))
+    assert moved.json()["result"]["isError"] is False
+    assert db.get_note(note["id"])["folder_id"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("query", ["", "?", "?existing=value", "?tag=a&tag=b&empty=&raw=a%2Fb&plus=a+b"])
+@pytest.mark.parametrize("state", ["", "opaque state + / ? & 日本語"])
+async def test_oauth_preserves_registered_callback_query_and_exchanges_code(client, query, state):
+    redirect_uri = f"https://example.com/callback{query}"
+    registered = await client.post("/oauth/register", json={"client_name": "Query callback", "redirect_uris": [redirect_uri]})
+    assert registered.status_code == 201
+    client_id = registered.json()["client_id"]
+    verifier = "a" * 50
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    authorization = await client.post("/oauth/authorize", data={
+        "client_id": client_id, "redirect_uri": redirect_uri, "resource": "http://testserver/mcp",
+        "scope": "notes:read", "requested_scope": "notes:read", "code_challenge": challenge,
+        "code_challenge_method": "S256", "actor_name": "Query tester", "password": "test-password", "state": state,
+    })
+    assert authorization.status_code == 303
+    destination = urlparse(authorization.headers["location"])
+    response_query = parse_qs(destination.query, keep_blank_values=True)
+    assert len(response_query["code"]) == 1
+    for key, values in parse_qs(urlparse(redirect_uri).query, keep_blank_values=True).items():
+        assert response_query[key] == values
+    assert response_query.get("state") == ([state] if state else None)
+    if urlparse(redirect_uri).query:
+        assert destination.query.startswith(urlparse(redirect_uri).query + "&")
+    exchanged = await client.post("/oauth/token", data={
+        "grant_type": "authorization_code", "client_id": client_id, "code": response_query["code"][0],
+        "redirect_uri": redirect_uri, "resource": "http://testserver/mcp", "code_verifier": verifier,
+    })
+    assert exchanged.status_code == 200
+    assert exchanged.json()["scope"] == "notes:read"

@@ -70,12 +70,17 @@ export default function App() {
   const [startupError, setStartupError] = useState<{ status: number | null } | null>(null);
   const [documentBusy, setDocumentBusy] = useState(false);
   const [documentError, setDocumentError] = useState("");
+  const [navigationRefreshFailed, setNavigationRefreshFailed] = useState(false);
+  const [trashRefreshFailed, setTrashRefreshFailed] = useState(false);
+  const [documentRefreshFailed, setDocumentRefreshFailed] = useState(false);
   const documentQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingDocumentActions = useRef(0);
   const saveErrorTextRef = useRef(uiText.app.errors);
   const copyResetTimer = useRef<number | null>(null);
   const sidebarModeRef = useRef<SidebarMode>("files");
   const navigationRevisionRef = useRef(0);
+  const navigationRefreshRevision = useRef(0);
+  const trashRefreshRevision = useRef(0);
 
   const updateSidebarMode = useCallback((mode: SidebarMode) => {
     sidebarModeRef.current = mode;
@@ -84,16 +89,34 @@ export default function App() {
   }, []);
 
   const refreshNavigation = useCallback(async () => {
-    const [nextTree, nextRecent] = await Promise.all([api.tree(), api.recent()]);
-    setTree(nextTree);
-    setRecent(nextRecent);
-    return nextTree;
+    const revision = ++navigationRefreshRevision.current;
+    try {
+      const [nextTree, nextRecent] = await Promise.all([api.tree(), api.recent()]);
+      if (revision === navigationRefreshRevision.current) {
+        setTree(nextTree);
+        setRecent(nextRecent);
+        setNavigationRefreshFailed(false);
+      }
+      return nextTree;
+    } catch (error) {
+      if (revision === navigationRefreshRevision.current) setNavigationRefreshFailed(true);
+      throw error;
+    }
   }, []);
 
   const refreshTrash = useCallback(async () => {
-    const nextTrash = await api.trash();
-    setTrash(nextTrash);
-    return nextTrash;
+    const revision = ++trashRefreshRevision.current;
+    try {
+      const nextTrash = await api.trash();
+      if (revision === trashRefreshRevision.current) {
+        setTrash(nextTrash);
+        setTrashRefreshFailed(false);
+      }
+      return nextTrash;
+    } catch (error) {
+      if (revision === trashRefreshRevision.current) setTrashRefreshFailed(true);
+      throw error;
+    }
   }, []);
 
   const onSaved = useCallback((updated: Note) => {
@@ -108,6 +131,7 @@ export default function App() {
     resetAutosave(selected);
     setNote(selected);
     setContent(selected?.content ?? "");
+    setDocumentRefreshFailed(false);
   }, [resetAutosave]);
 
   useEffect(() => { saveErrorTextRef.current = uiText.app.errors; }, [uiText]);
@@ -291,32 +315,44 @@ export default function App() {
       setOutlineOpen(false);
     }
   };
+  // The mutation has already committed. A failed follow-up read must not make
+  // a successful create/rename/delete look like a failed write or invite retry.
+  const refreshSelectedNote = async (saved: Note | null) => {
+    if (!saved) return null;
+    try {
+      const selected = await api.note(saved.id);
+      showNote(selected);
+      return selected;
+    } catch {
+      setDocumentRefreshFailed(true);
+      return null;
+    }
+  };
   const createNote = async (filename: string, folderId: string | null) => {
     await withSavedNote(async () => {
       const title = filename.replace(/\.md$/i, "");
       const created = await api.createNote({ filename, folder_id: folderId, content: `# ${title}\n\n` });
-      await refreshNavigation();
       setTrashedNote(null); showNote(created);
       setSelectedFolderId(created.folder_id ?? "unfiled");
       updateSidebarMode("files"); setDesktopSidebar(true);
+      await refreshNavigation().catch(() => {});
     });
   };
   const createFolder = async (name: string, parentId: string | null) => {
     await api.createFolder({ name, parent_id: parentId });
-    await refreshNavigation();
     setTrashedNote(null);
     updateSidebarMode("files"); setDesktopSidebar(true);
+    await refreshNavigation().catch(() => {});
   };
   const renameSelectedFolder = async (name: string) => {
     if (!folderToRename) return;
     const folderId = folderToRename.id;
     await withSavedNote(async (saved) => {
       await api.renameFolder(folderId, name);
-      const [, selected] = await Promise.all([
-        refreshNavigation(),
-        saved ? api.note(saved.id) : Promise.resolve(null),
+      await Promise.all([
+        refreshNavigation().catch(() => {}),
+        refreshSelectedNote(saved),
       ]);
-      if (selected) showNote(selected);
       setRevealTree((value) => value + 1);
     });
   };
@@ -328,10 +364,9 @@ export default function App() {
     await withSavedNote(async (saved) => {
       await api.deleteFolder(folder.id);
       const [, selected] = await Promise.all([
-        refreshNavigation(),
-        saved ? api.note(saved.id) : Promise.resolve(null),
+        refreshNavigation().catch(() => {}),
+        refreshSelectedNote(saved),
       ]);
-      if (selected) showNote(selected);
       if (removesSelectedFolder) setSelectedFolderId(selected?.folder_id ?? "unfiled");
       setRevealTree((value) => value + 1);
     }).catch(() => {});
@@ -344,19 +379,22 @@ export default function App() {
       const updated = await api.relocateNote(saved.id, { filename, folder_id: folderId, version: saved.version });
       showNote(updated);
       setSelectedFolderId(updated.folder_id ?? "unfiled");
-      await refreshNavigation();
       updateSidebarMode("files"); setDesktopSidebar(true);
+      await refreshNavigation().catch(() => {});
     });
   };
   const reloadWorkspace = async () => {
     setReloadBusy(true);
     try {
       await withSavedNote(async (saved) => {
-        const [, selected] = await Promise.all([
+        const [, nextTrash, selected] = await Promise.all([
           refreshNavigation(),
+          refreshTrash(),
           saved ? api.note(saved.id) : Promise.resolve(null),
         ]);
         if (selected) showNote(selected);
+        if (trashedNote && !nextTrash.some((item) => item.id === trashedNote.id)) setTrashedNote(null);
+        setDocumentRefreshFailed(false);
       }).catch(() => {});
     } finally { setReloadBusy(false); }
   };
@@ -371,8 +409,11 @@ export default function App() {
       if (!saved || saved.id !== noteId) return;
       await api.deleteNote(noteId);
       showNote(null);
-      const [nextTree] = await Promise.all([refreshNavigation(), refreshTrash()]);
-      const next = flattenNotes(nextTree)[0];
+      const [nextTree] = await Promise.all([
+        refreshNavigation().catch(() => null),
+        refreshTrash().catch(() => {}),
+      ]);
+      const next = nextTree ? flattenNotes(nextTree)[0] : null;
       if (next && sidebarModeRef.current === "files") void selectById(next.id);
     }).catch(() => {});
   };
@@ -382,10 +423,13 @@ export default function App() {
     try {
       await withSavedNote(async () => {
         const restored = await api.restoreNote(trashedNote.id);
-        await Promise.all([refreshNavigation(), refreshTrash()]);
         setTrashedNote(null); showNote(restored);
         setSelectedFolderId(restored.folder_id ?? "unfiled");
         updateSidebarMode("files"); setDesktopSidebar(true); setRevealTree((value) => value + 1);
+        await Promise.all([
+          refreshNavigation().catch(() => {}),
+          refreshTrash().catch(() => {}),
+        ]);
       });
     } catch (error) {
       setRestoreError(error instanceof Error ? error.message : uiText.app.errors.restoreNote);
@@ -397,9 +441,9 @@ export default function App() {
     setTrashBusy(true); setTrashMessage("");
     try {
       const result = await api.purgeTrash(days);
-      const nextTrash = await refreshTrash();
-      if (trashedNote && !nextTrash.some((item) => item.id === trashedNote.id)) setTrashedNote(null);
       setTrashMessage(uiText.app.trashPurged(result.deleted));
+      const nextTrash = await refreshTrash().catch(() => null);
+      if (trashedNote && nextTrash && !nextTrash.some((item) => item.id === trashedNote.id)) setTrashedNote(null);
     } catch (error) {
       setTrashMessage(error instanceof Error ? error.message : uiText.app.errors.purgeTrash);
     } finally { setTrashBusy(false); }
@@ -436,6 +480,7 @@ export default function App() {
         <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
         {mobileSidebar ? <button className="sidebar-scrim" aria-label={uiText.app.sidebarClose} onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
+          {navigationRefreshFailed || trashRefreshFailed || documentRefreshFailed ? <div className="document-error navigation-warning" role="status"><span>{uiText.app.refreshWarning}</span><button onClick={() => void reloadWorkspace()} disabled={documentBusy || reloadBusy}>{uiText.app.retryRefresh}</button></div> : null}
           {documentError ? <div className="document-error" role="alert"><span>{documentError}</span>{saveState === "error" || saveState === "conflict" ? <button onClick={() => void withSavedNote(async () => {}).catch(() => {})} disabled={documentBusy}>{uiText.app.retrySave}</button> : null}</div> : null}
           {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} previewCheckboxMode={previewCheckboxMode} onPreviewCheckboxMode={setPreviewCheckboxMode} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
             <header className="document-bar">

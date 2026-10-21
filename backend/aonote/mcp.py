@@ -182,6 +182,40 @@ TOOLS = [
 ]
 
 
+def _validate_tool_arguments(name: str, arguments: Dict[str, Any]) -> None:
+    """Enforce the published flat schemas even when a client skips validation."""
+    tool = next((item for item in TOOLS if item["name"] == name), None)
+    if tool is None:
+        raise ValueError(f"Unknown tool: {name}")
+    schema = tool["inputSchema"]
+    for required in schema.get("required", []):
+        if required not in arguments:
+            raise ValueError(f"{required} is required")
+    for field, definition in schema["properties"].items():
+        if field not in arguments:
+            continue
+        value = arguments[field]
+        types = definition["type"]
+        allowed = types if isinstance(types, list) else [types]
+        valid = (
+            ("string" in allowed and isinstance(value, str))
+            or ("integer" in allowed and type(value) is int)
+            or ("null" in allowed and value is None)
+        )
+        if not valid:
+            raise ValueError(f"{field} must be {' or '.join(allowed)}")
+        if isinstance(value, str):
+            if len(value) < definition.get("minLength", 0):
+                raise ValueError(f"{field} is too short")
+            if "maxLength" in definition and len(value) > definition["maxLength"]:
+                raise ValueError(f"{field} is too long")
+        if type(value) is int:
+            if "minimum" in definition and value < definition["minimum"]:
+                raise ValueError(f"{field} must be at least {definition['minimum']}")
+            if "maximum" in definition and value > definition["maximum"]:
+                raise ValueError(f"{field} must be at most {definition['maximum']}")
+
+
 def _result(value: Any, is_error: bool = False) -> Dict[str, Any]:
     text = json.dumps(value, ensure_ascii=False, indent=2)
     result: Dict[str, Any] = {"content": [{"type": "text", "text": text}], "isError": is_error}
@@ -283,6 +317,7 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
             started = perf_counter()
             reason = "ok"
             try:
+                _validate_tool_arguments(name, arguments)
                 value = call_tool(name, arguments, principal)
                 return {"jsonrpc": "2.0", "id": request_id, "result": _result(value)}
             except PermissionError as exc:
@@ -376,10 +411,10 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
         if name == "update_note":
             require_scope(principal, "notes:write")
             note = db.update_note(
-                str(arguments.get("note_id", "")),
-                content=str(arguments.get("content", "")),
+                arguments["note_id"],
+                content=arguments["content"],
                 filename=arguments.get("filename"),
-                expected_version=int(arguments.get("version", 0)),
+                expected_version=arguments["version"],
                 **actor,
             )
             if not note:
@@ -388,9 +423,9 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
         if name == "rename_note":
             require_scope(principal, "notes:write")
             note = db.update_note(
-                str(arguments.get("note_id", "")),
-                filename=str(arguments.get("filename", "")),
-                expected_version=int(arguments.get("version", 0)),
+                arguments["note_id"],
+                filename=arguments["filename"],
+                expected_version=arguments["version"],
                 **actor,
             )
             if not note:
@@ -399,9 +434,9 @@ def create_mcp_router(settings: Settings, db: Database) -> APIRouter:
         if name == "move_note":
             require_scope(principal, "notes:write")
             note = db.update_note(
-                str(arguments.get("note_id", "")),
-                folder_id=arguments.get("folder_id"),
-                expected_version=int(arguments.get("version", 0)),
+                arguments["note_id"],
+                folder_id=arguments["folder_id"],
+                expected_version=arguments["version"],
                 **actor,
             )
             if not note:
