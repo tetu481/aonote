@@ -567,6 +567,13 @@ class Database:
                     expires_at INTEGER NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    failed_attempts INTEGER NOT NULL,
+                    window_started_at INTEGER NOT NULL,
+                    locked_until INTEGER NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS oauth_clients (
                     client_id TEXT PRIMARY KEY,
                     client_name TEXT NOT NULL,

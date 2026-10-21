@@ -8,8 +8,9 @@ from pydantic import BaseModel, Field
 
 from .config import Settings
 from .db import Database, FolderDepthError, VersionConflict
+from .login import check_login
 from .oauth import validate_oauth_token
-from .security import bearer_token, verify_password
+from .security import bearer_token
 
 
 class LoginInput(BaseModel):
@@ -87,7 +88,14 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
 
     @router.post("/session")
     def login(payload: LoginInput, response: Response) -> Dict[str, bool]:
-        if not verify_password(payload.password, settings.admin_password):
+        result = check_login(db, settings, payload.password)
+        if result.retry_after:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many login attempts. Please try again later.",
+                headers={"Retry-After": str(result.retry_after), "Cache-Control": "no-store"},
+            )
+        if not result.authenticated:
             raise HTTPException(status_code=401, detail="パスワードが正しくありません")
         session = db.create_session(settings.session_ttl)
         response.set_cookie(

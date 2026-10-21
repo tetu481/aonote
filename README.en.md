@@ -148,6 +148,10 @@ After updating and restarting aonote, refresh the MCP tool list in the client by
 
 ## Security Notes
 
+Set `AONOTE_LOGIN_MAX_ATTEMPTS` to the maximum number of failed password attempts (positive integer, default `5`). Missing, empty, invalid, zero, or negative values also use `5`. Reaching the limit within a 15-minute window blocks new logins for 15 minutes, starting with the attempt that reaches the limit. Responses use HTTP 429 and a `Retry-After` header containing the remaining seconds. Even the correct password is rejected during the lockout; blocked requests do not extend it.
+
+Browser login and OAuth consent share the single administrator account's attempt budget, regardless of IP address or client name. Successful login, window expiry, or lockout expiry resets the counter. SQLite persists the state across restarts and workers. Existing browser sessions, OAuth tokens, and token refresh remain usable. Keep reverse-proxy rate limiting enabled as an additional layer.
+
 - Do not commit `.env`.
 - Do not commit databases containing real notes, including `data/` and `*.sqlite3` files.
 - Always use `AONOTE_DEV_BYPASS_AUTH=false` in production.

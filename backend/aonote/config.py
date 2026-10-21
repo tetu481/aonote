@@ -30,6 +30,7 @@ class Settings:
     min_free_disk_mb: int = 100
     monitor_interval_seconds: int = 60
     workspace_session_hours: int = 1
+    login_max_attempts: int = 5
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -53,6 +54,9 @@ class Settings:
             ),
             workspace_session_hours=_as_positive_int(
                 os.getenv("AONOTE_WORKSPACE_SESSION_HOURS", ""), 1
+            ),
+            login_max_attempts=_as_positive_int(
+                os.getenv("AONOTE_LOGIN_MAX_ATTEMPTS", ""), 5
             ),
         )
 

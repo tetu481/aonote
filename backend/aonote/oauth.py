@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 
 from .config import Settings
 from .db import Database
-from .security import now_ts, random_token, token_hash, verify_password, verify_s256
+from .login import check_login
+from .security import now_ts, random_token, token_hash, verify_s256
 
 
 SCOPE_DETAILS = (
@@ -256,7 +257,18 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         if not set(normalized_scope.split()).issubset(set(normalized_requested_scope.split())):
             raise HTTPException(status_code=400, detail="invalid_scope")
         values["scope"] = normalized_scope
-        if not verify_password(password, settings.admin_password):
+        login = check_login(db, settings, password)
+        if login.retry_after:
+            minutes = (login.retry_after + 59) // 60
+            return HTMLResponse(
+                _consent_html(
+                    settings, client["client_name"], values,
+                    f"ログイン試行回数の上限に達しました。約{minutes}分後に再度お試しください。",
+                ),
+                status_code=429,
+                headers={"Retry-After": str(login.retry_after), "Cache-Control": "no-store"},
+            )
+        if not login.authenticated:
             return HTMLResponse(
                 _consent_html(settings, client["client_name"], values, "パスワードが正しくありません。"),
                 status_code=401,

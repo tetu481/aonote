@@ -111,6 +111,7 @@ export const en = {
   },
   login: {
     invalidPassword: "Incorrect password",
+    rateLimited: (minutes: number) => `Too many login attempts. Try again in about ${minutes} minute(s).`,
     title: "Open workspace",
     description: "Your notes are private. Enter the admin password.",
     password: "Admin password",

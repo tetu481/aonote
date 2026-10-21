@@ -4,11 +4,13 @@ import { getUiText, readStoredLocale } from "./locales";
 export class ApiError extends Error {
   status: number;
   body: unknown;
+  retryAfter: number | undefined;
 
-  constructor(status: number, body: unknown) {
+  constructor(status: number, body: unknown, retryAfter?: number) {
     super(typeof body === "object" && body && "detail" in body ? String((body as { detail: unknown }).detail) : getUiText(readStoredLocale()).api.error(status));
     this.status = status;
     this.body = body;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -29,7 +31,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       body = raw;
     }
-    throw new ApiError(response.status, body);
+    const retryAfter = Number(response.headers.get("Retry-After"));
+    throw new ApiError(response.status, body, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

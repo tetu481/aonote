@@ -109,6 +109,7 @@ export const ja = {
   },
   login: {
     invalidPassword: "パスワードが正しくありません",
+    rateLimited: (minutes: number) => `ログイン試行回数の上限に達しました。約${minutes}分後に再度お試しください。`,
     title: "ワークスペースを開く",
     description: "あなたのノートは非公開です。管理パスワードを入力してください。",
     password: "管理パスワード",
