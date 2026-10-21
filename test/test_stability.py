@@ -57,15 +57,20 @@ def seed_grant(db, grant_type):
         ))
         if grant_type == "authorization_code":
             challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-            connection.execute("INSERT INTO oauth_codes VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (
+            connection.execute("""INSERT INTO oauth_codes
+                (code_hash, client_id, redirect_uri, scope, resource, code_challenge, expires_at, actor_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", (
                 token_hash("secret-code-marker"), "client", "https://example.com/callback",
                 "notes:read notes:write", resource, challenge, now_ts() + 300, "担当",
             ))
         else:
-            connection.execute("INSERT INTO oauth_tokens VALUES (?, ?, ?, ?, ?, ?, ?)", (
+            connection.execute("""INSERT INTO oauth_tokens
+                (token_hash, token_kind, client_id, scope, resource, expires_at, actor_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""", (
                 token_hash("secret-refresh-marker"), "refresh", "client", "notes:read notes:write",
                 resource, now_ts() + 300, "担当",
             ))
+        db._migrate_oauth_connections(connection)
     return {
         "grant_type": grant_type, "client_id": "client", "resource": resource,
         "code": "secret-code-marker", "code_verifier": verifier,
@@ -76,10 +81,13 @@ def seed_grant(db, grant_type):
 def seed_access(db):
     seed_grant(db, "refresh_token")
     with db.connect(write=True) as connection:
-        connection.execute("INSERT INTO oauth_tokens VALUES (?, ?, ?, ?, ?, ?, ?)", (
+        connection.execute("""INSERT INTO oauth_tokens
+            (token_hash, token_kind, client_id, scope, resource, expires_at, actor_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""", (
             token_hash("secret-access-marker"), "access", "client", "notes:read notes:search notes:write",
             "http://testserver/mcp", now_ts() + 300, "担当",
         ))
+        db._migrate_oauth_connections(connection)
     return {"Authorization": "Bearer secret-access-marker"}
 
 

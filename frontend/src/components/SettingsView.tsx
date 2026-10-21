@@ -1,10 +1,13 @@
 import { ArrowLeft, Check, MoonStar, Settings2, Sun } from "lucide-react";
+import { ConnectionsView } from "./ConnectionsView";
 import { useLocale } from "../LocaleContext";
 import { SUPPORTED_LOCALES } from "../locales";
 import { PREVIEW_CHECKBOX_MODES, type PreviewCheckboxMode } from "../previewCheckboxes";
 import type { Theme } from "../theme";
+import type { SettingsSection } from "../types";
 
 type Props = {
+  section: SettingsSection;
   theme: Theme;
   onTheme: (theme: Theme) => void;
   previewCheckboxMode: PreviewCheckboxMode;
@@ -12,7 +15,7 @@ type Props = {
   onClose: () => void;
 };
 
-export function SettingsView({ theme, onTheme, previewCheckboxMode, onPreviewCheckboxMode, onClose }: Props) {
+export function SettingsView({ section, theme, onTheme, previewCheckboxMode, onPreviewCheckboxMode, onClose }: Props) {
   const { locale, setLocale, text: uiText } = useLocale();
   const themes = [
     { id: "light", ...uiText.settings.themes.light, Icon: Sun },
@@ -21,7 +24,7 @@ export function SettingsView({ theme, onTheme, previewCheckboxMode, onPreviewChe
 
   return <>
     <header className="document-bar settings-document-bar">
-      <div className="settings-breadcrumb"><Settings2 size={17} /><strong>{uiText.settings.breadcrumb}</strong><span>/</span><span>{uiText.settings.preferences}</span></div>
+      <div className="settings-breadcrumb"><Settings2 size={17} /><strong>{uiText.settings.breadcrumb}</strong><span>/</span><span>{section === "connections" ? uiText.sidebar.connections : uiText.sidebar.appearance}</span></div>
       <button className="secondary-button settings-back-button" onClick={onClose} aria-label={uiText.settings.backToNote}><ArrowLeft size={16} /><span>{uiText.settings.backToNote}</span></button>
     </header>
     <div className="settings-scroll">
@@ -31,6 +34,7 @@ export function SettingsView({ theme, onTheme, previewCheckboxMode, onPreviewChe
           <h1 id="settings-title">{uiText.settings.title}</h1>
           <p>{uiText.settings.description}</p>
         </div>
+        {section === "connections" ? <ConnectionsView /> : <>
         <section className="settings-section" aria-labelledby="theme-heading">
           <div className="settings-section-heading">
             <div><h2 id="theme-heading">{uiText.settings.themeTitle}</h2><p>{uiText.settings.themeDescription}</p></div>
@@ -79,8 +83,9 @@ export function SettingsView({ theme, onTheme, previewCheckboxMode, onPreviewChe
             })}
           </div>
         </section>
+        </>}
       </section>
     </div>
-    <footer className="statusbar settings-statusbar"><span className="settings-saved-status"><i />{uiText.settings.savedAutomatically}</span><span className="status-spacer" /><span>{uiText.settings.currentTheme(uiText.settings.themes[theme].label)}</span><b /><span>{uiText.settings.currentLanguage(uiText.settings.languages[locale].label)}</span></footer>
+    <footer className="statusbar settings-statusbar"><span className="settings-saved-status"><i />{section === "connections" ? uiText.settings.connectionStorage : uiText.settings.savedAutomatically}</span><span className="status-spacer" /><span>{uiText.settings.currentTheme(uiText.settings.themes[theme].label)}</span><b /><span>{uiText.settings.currentLanguage(uiText.settings.languages[locale].label)}</span></footer>
   </>;
 }

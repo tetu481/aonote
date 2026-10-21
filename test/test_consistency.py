@@ -42,10 +42,13 @@ def access_token(db, scope, *, expires=None, resource="http://testserver/mcp"):
         connection.execute("INSERT OR IGNORE INTO oauth_clients VALUES (?, ?, ?, ?)", (
             "consistency-client", "Test agent", '["https://example.com/callback"]', now_ts(),
         ))
-        connection.execute("INSERT OR REPLACE INTO oauth_tokens VALUES (?, ?, ?, ?, ?, ?, ?)", (
+        connection.execute("""INSERT OR REPLACE INTO oauth_tokens
+            (token_hash, token_kind, client_id, scope, resource, expires_at, actor_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""", (
             token_hash("consistency-token"), "access", "consistency-client", scope,
             resource, expires if expires is not None else now_ts() + 300, "Test author",
         ))
+        db._migrate_oauth_connections(connection)
     return {"Authorization": "Bearer consistency-token"}
 
 

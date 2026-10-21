@@ -1,8 +1,8 @@
-import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Palette, Pencil, Search, Settings2, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Palette, Pencil, Search, Settings2, ShieldCheck, Trash2 } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { folderContainsNote, flattenNotes } from "../folderUtils";
 import { useLocale, useUiText } from "../LocaleContext";
-import type { FolderNode, NoteSummary, TrashedNoteSummary } from "../types";
+import type { FolderNode, NoteSummary, SettingsSection, TrashedNoteSummary } from "../types";
 import { WELCOME_DEFAULTS } from "../workspaceDefaults";
 
 export type SidebarMode = "files" | "recent" | "trash" | "settings";
@@ -66,9 +66,11 @@ type Props = {
   selectedFolderId: string | null;
   revealKey: number;
   mode: SidebarMode;
+  settingsSection: SettingsSection;
   mobileOpen: boolean;
   desktopOpen: boolean;
   onMode: (mode: SidebarMode) => void;
+  onSettingsSection: (section: SettingsSection) => void;
   onSelect: (note: NoteSummary) => void;
   onSelectTrash: (note: TrashedNoteSummary) => void;
   onSelectFolder: (folderId: string) => void;
@@ -80,7 +82,7 @@ type Props = {
   trashMessage: string;
 };
 
-export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, selectedFolderId, revealKey, mode, mobileOpen, desktopOpen, onMode, onSelect, onSelectTrash, onSelectFolder, onSearch, onRenameFolder, onDeleteFolder, onPurgeTrash, trashBusy, trashMessage }: Props) {
+export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, selectedFolderId, revealKey, mode, settingsSection, mobileOpen, desktopOpen, onMode, onSettingsSection, onSelect, onSelectTrash, onSelectFolder, onSearch, onRenameFolder, onDeleteFolder, onPurgeTrash, trashBusy, trashMessage }: Props) {
   const uiText = useUiText();
   const [trashDays, setTrashDays] = useState("30");
   const deletedAtFormatter = useMemo(() => new Intl.DateTimeFormat(uiText.meta.locale, {
@@ -96,7 +98,7 @@ export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, sele
         <button onClick={onSearch} aria-label={uiText.sidebar.search}><Search size={20} /></button>
         <button className={mode === "recent" ? "active" : ""} onClick={() => onMode("recent")} aria-label={uiText.sidebar.recent}><Clock3 size={19} /></button>
         <button className={mode === "trash" ? "active" : ""} onClick={() => onMode("trash")} aria-label={uiText.sidebar.trash}><Trash2 size={19} /></button>
-        <button className={`rail-bottom ${mode === "settings" ? "active" : ""}`} onClick={() => onMode("settings")} aria-label={uiText.sidebar.settings}><Settings2 size={19} /></button>
+        <button className={`rail-bottom ${mode === "settings" ? "active" : ""}`} onClick={() => { onSettingsSection("preferences"); onMode("settings"); }} aria-label={uiText.sidebar.settings}><Settings2 size={19} /></button>
       </nav>
       <div className="sidebar-panel">
         <div className="sidebar-heading">
@@ -118,7 +120,10 @@ export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, sele
             <button key={item.id} className={`trash-row ${selectedTrashId === item.id ? "selected" : ""}`} onClick={() => onSelectTrash(item)}>
               <Trash2 size={16} /><span><strong data-full-name={item.filename}>{item.filename}</strong><small data-full-name={item.deleted_path}>{item.deleted_path}</small><time>{deletedAtFormatter.format(new Date(item.deleted_at * 1000))}</time></span>
             </button>
-          )) : mode === "trash" ? <div className="trash-empty"><Trash2 size={22} /><span>{uiText.sidebar.emptyTrash}</span></div> : <button className="settings-nav-row selected" onClick={() => onMode("settings")}><Palette size={17} /><span><strong>{uiText.sidebar.appearance}</strong><small>{uiText.sidebar.appearanceDescription}</small></span></button>}
+          )) : mode === "trash" ? <div className="trash-empty"><Trash2 size={22} /><span>{uiText.sidebar.emptyTrash}</span></div> : <>
+            <button className={`settings-nav-row ${settingsSection === "preferences" ? "selected" : ""}`} aria-label={uiText.sidebar.appearance} aria-current={settingsSection === "preferences" ? "page" : undefined} onClick={() => { onSettingsSection("preferences"); onMode("settings"); }}><Palette size={17} /><span><strong>{uiText.sidebar.appearance}</strong><small>{uiText.sidebar.appearanceDescription}</small></span></button>
+            <button className={`settings-nav-row ${settingsSection === "connections" ? "selected" : ""}`} aria-label={uiText.sidebar.connections} aria-current={settingsSection === "connections" ? "page" : undefined} onClick={() => { onSettingsSection("connections"); onMode("settings"); }}><ShieldCheck size={17} /><span><strong>{uiText.sidebar.connections}</strong><small>{uiText.sidebar.connectionsDescription}</small></span></button>
+          </>}
         </div>
         <div className="sidebar-foot"><span>{mode === "trash" ? uiText.sidebar.trashCount(trash.length) : mode === "settings" ? uiText.sidebar.preferences : uiText.sidebar.noteCount(flattenNotes(tree).length)}</span><span>{mode === "settings" ? "aonote" : uiText.sidebar.database}</span></div>
       </div>

@@ -574,6 +574,21 @@ class Database:
                     created_at INTEGER NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS oauth_connections (
+                    id TEXT PRIMARY KEY,
+                    client_id TEXT NOT NULL REFERENCES oauth_clients(client_id),
+                    actor_name TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    approved_scope TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    created_at INTEGER,
+                    updated_at INTEGER NOT NULL,
+                    last_used_at INTEGER,
+                    revoked_at INTEGER,
+                    legacy INTEGER NOT NULL DEFAULT 0,
+                    version INTEGER NOT NULL DEFAULT 1
+                );
+
                 CREATE TABLE IF NOT EXISTS oauth_codes (
                     code_hash TEXT PRIMARY KEY,
                     client_id TEXT NOT NULL,
@@ -667,8 +682,14 @@ class Database:
                 "actor_name TEXT NOT NULL DEFAULT '管理者'",
                 "client_name TEXT",
             ),
-            "oauth_codes": ("actor_name TEXT NOT NULL DEFAULT ''",),
-            "oauth_tokens": ("actor_name TEXT NOT NULL DEFAULT ''",),
+            "oauth_codes": (
+                "actor_name TEXT NOT NULL DEFAULT ''",
+                "connection_id TEXT REFERENCES oauth_connections(id)",
+            ),
+            "oauth_tokens": (
+                "actor_name TEXT NOT NULL DEFAULT ''",
+                "connection_id TEXT REFERENCES oauth_connections(id)",
+            ),
         }
         for table, definitions in additions.items():
             columns = {
@@ -678,6 +699,49 @@ class Database:
                 name = definition.split()[0]
                 if name not in columns:
                     connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+        Database._migrate_oauth_connections(connection)
+
+    @staticmethod
+    def _migrate_oauth_connections(connection: sqlite3.Connection) -> None:
+        # Old credentials have no grant/family identifier. Preserve them without
+        # guessing token pairs: group by client, original actor and resource.
+        rows = connection.execute(
+            """SELECT client_id, actor_name, resource, scope FROM oauth_tokens
+               WHERE connection_id IS NULL
+               UNION ALL
+               SELECT client_id, actor_name, resource, scope FROM oauth_codes
+               WHERE connection_id IS NULL"""
+        ).fetchall()
+        groups: Dict[tuple[str, str, str], set[str]] = {}
+        for row in rows:
+            key = (row["client_id"], row["actor_name"], row["resource"])
+            groups.setdefault(key, set()).update(row["scope"].split())
+        for (client_id, actor_name, resource), scopes in groups.items():
+            if not connection.execute(
+                "SELECT 1 FROM oauth_clients WHERE client_id = ?", (client_id,)
+            ).fetchone():
+                # Orphaned legacy credentials were already unusable. Leave them
+                # unusable instead of manufacturing a registered client.
+                continue
+            connection_id = str(uuid4())
+            scope = " ".join(sorted(scopes))
+            connection.execute(
+                """INSERT INTO oauth_connections
+                   (id, client_id, actor_name, scope, approved_scope, resource,
+                    created_at, updated_at, legacy)
+                   VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 1)""",
+                (connection_id, client_id, actor_name, scope, scope, resource, now_ts()),
+            )
+            for table in ("oauth_tokens", "oauth_codes"):
+                connection.execute(
+                    f"""UPDATE {table} SET connection_id = ? WHERE connection_id IS NULL
+                        AND client_id = ? AND actor_name = ? AND resource = ?""",
+                    (connection_id, client_id, actor_name, resource),
+                )
+        for table in ("oauth_tokens", "oauth_codes"):
+            connection.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table}_connection ON {table}(connection_id)"
+            )
 
     def _migrate_seed_content(
         self, connection: sqlite3.Connection, folder_name: str, seed_notes: Dict[str, str]

@@ -1,4 +1,4 @@
-import type { AppStatus, FolderNode, Note, NoteSummary, SearchResult, TrashedNote, TrashedNoteSummary } from "./types";
+import type { AIConnection, OAuthScope, AppStatus, FolderNode, Note, NoteSummary, SearchResult, TrashedNote, TrashedNoteSummary } from "./types";
 import { getUiText, readStoredLocale } from "./locales";
 
 export class ApiError extends Error {
@@ -39,6 +39,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  connections: (signal?: AbortSignal) => request<AIConnection[]>("/api/connections", { signal }),
+  updateConnection: (id: string, payload: { actor_name: string; scopes: OAuthScope[]; version: number }) =>
+    request<AIConnection>(`/api/connections/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "X-Aonote-Request": "connections" }, body: JSON.stringify(payload) }),
+  disconnect: (id: string) => request<void>(`/api/connections/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "X-Aonote-Request": "connections" } }),
   login: (password: string) => request<{ authenticated: boolean }>("/api/session", { method: "POST", body: JSON.stringify({ password }) }),
   status: () => request<AppStatus>("/api/status"),
   tree: () => request<FolderNode[]>("/api/tree"),

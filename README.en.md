@@ -19,6 +19,7 @@ aonote is a lightweight web workspace where you and AI can work with the same Ma
 - Note renaming and moving, plus folder creation with a configurable maximum depth
 - Read-only previews of deleted notes, restoration, and permanent deletion after a specified number of days
 - Japanese/English display switching from Settings, saved in the browser
+- Review authorized AI connections, edit display names and permissions, and disconnect individual OAuth connections from Settings
 - Reloading restores the last open note and view mode in the same tab (one hour by default). Missing, expired, or deleted-note sessions fall back to the welcome note for the selected language in preview mode.
 - Choose preview task-checkbox behavior in Settings: read-only (default), toggle only, or toggle with a strikethrough on ON (checked) text. Checkbox changes in preview and split views are autosaved; the strikethrough only affects display. The preference is saved in your browser.
 
@@ -100,6 +101,18 @@ aonote exposes the following discovery endpoints:
 - `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke`
 
 ChatGPT connections require publicly accessible HTTPS. For local development, use MCP Inspector or an HTTPS tunnel. See OpenAI's current requirements in [Authentication](https://developers.openai.com/plugins/build/auth) and [Connect and test your plugin](https://developers.openai.com/plugins/deploy/connect-chatgpt).
+
+## Manage Connected AI Apps
+
+Open **Settings → Manage AI connections** in the left menu to manage connections approved through OAuth. Theme, language and preview controls are under **Display settings**. Registering a client alone does not add an entry.
+
+- Review the display name, app, allowed scopes, connection time, last use and status (active, pending, expired or disconnected). Expand **Connection details** for the client ID, connection ID, resource, registered callback URLs and credential expiry. Authenticated MCP/REST activity is recorded approximately once per minute. Token values and hashes are never returned by the management API.
+- Use **Edit details and permissions**, then **Save changes** to store a display name and permissions on the server. Name changes apply to future writes, not authors/editors already recorded on notes. The registered app name (`client_name`) and resource are read-only.
+- Permissions can be changed only within the original OAuth consent. Removing permissions affects existing tokens on their next request. Restoring permissions may require the AI app to refresh its token. Adding a permission that was never approved requires a new OAuth authorization in the AI app.
+- **Disconnect** asks for confirmation, then invalidates every access token, refresh token and unused authorization code belonging to that connection. Other connections from the same app and your notes are kept. Disconnected entries remain visible; reconnecting requires new OAuth authorization. Revocation and token refresh use the same writer lock so a concurrent refresh cannot revive a connection. Requests already authenticated before revocation are not cancelled. `/oauth/revoke` also disconnects the entire connection associated with the supplied token.
+- The management API (`/api/connections`) requires a browser administrator session. AI OAuth tokens alone cannot list, edit or disconnect connections. Mutations require a custom request header and origin validation. Development authentication bypass still applies; disable it in production.
+
+On the first startup after upgrading, existing OAuth credentials are migrated automatically. Since older data has no per-authorization identifier, credentials sharing a client ID, original display name and resource are grouped into a **Migrated connection**. Editing or disconnecting that entry affects the whole group, without granting permissions outside each token's original scope. Historical connection and activity times are shown as **Not recorded**, rather than inferred. New OAuth authorizations are tracked individually, even with the same app and display name.
 
 ## MCP Tools
 

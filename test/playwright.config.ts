@@ -21,7 +21,10 @@ export default defineConfig({
     env: {
       ...process.env,
       AONOTE_ENV: "development",
-      AONOTE_DATABASE: "/tmp/aonote-playwright.sqlite3",
+      AONOTE_DATABASE: process.env.AONOTE_E2E_DATABASE ?? "/tmp/aonote-playwright.sqlite3",
+      AONOTE_BASE_URL: "http://127.0.0.1:8765",
+      AONOTE_ADMIN_PASSWORD: "test-e2e-password",
+      AONOTE_DEV_BYPASS_AUTH: "true",
     },
   },
 });

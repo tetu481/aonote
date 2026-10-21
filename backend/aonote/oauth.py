@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from .config import Settings
+from .connections import revoke_connection
 from .db import Database
 from .login import check_login
 from .security import now_ts, random_token, token_hash, verify_s256
@@ -275,15 +276,23 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
                 status_code=401,
             )
         code = random_token()
-        with db.connect() as connection:
+        connection_id = random_token(24)
+        with db.connect(write=True) as connection:
+            connection.execute(
+                """INSERT INTO oauth_connections
+                   (id, client_id, actor_name, scope, approved_scope, resource, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (connection_id, client_id, actor_name, normalized_scope, normalized_scope,
+                 resource, now_ts(), now_ts()),
+            )
             connection.execute(
                 """INSERT INTO oauth_codes
                    (code_hash, client_id, redirect_uri, scope, resource,
-                    code_challenge, expires_at, actor_name)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    code_challenge, expires_at, actor_name, connection_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     token_hash(code), client_id, redirect_uri, normalized_scope,
-                    resource, code_challenge, now_ts() + 300, actor_name,
+                    resource, code_challenge, now_ts() + 300, actor_name, connection_id,
                 ),
             )
         query = {"code": code}
@@ -330,9 +339,6 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
                     or not verify_s256(code_verifier, row["code_challenge"])
                 ):
                     return JSONResponse({"error": "invalid_grant"}, status_code=400)
-                scope = row["scope"]
-                actor_name = row["actor_name"]
-                connection.execute("DELETE FROM oauth_codes WHERE code_hash = ?", (token_hash(code),))
             else:
                 row = connection.execute(
                     """SELECT * FROM oauth_tokens WHERE token_hash = ? AND token_kind = 'refresh'""",
@@ -343,16 +349,32 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
                     or row["client_id"] != client_id or row["resource"] != resource
                 ):
                     return JSONResponse({"error": "invalid_grant"}, status_code=400)
-                scope = row["scope"]
-                actor_name = row["actor_name"]
+            grant = connection.execute(
+                "SELECT * FROM oauth_connections WHERE id = ?", (row["connection_id"],)
+            ).fetchone()
+            if (
+                not grant or grant["revoked_at"] is not None
+                or grant["client_id"] != client_id or grant["resource"] != resource
+            ):
+                return JSONResponse({"error": "invalid_grant"}, status_code=400)
+            # Token scopes are a ceiling, including migrated credentials that
+            # originally had different permissions within a legacy group.
+            allowed = set(row["scope"].split()) & set(grant["scope"].split())
+            if not allowed:
+                return JSONResponse({"error": "invalid_scope"}, status_code=400)
+            scope = " ".join(item for item, _, _ in SCOPE_DETAILS if item in allowed)
+            actor_name = grant["actor_name"]
+            if grant_type == "authorization_code":
+                connection.execute("DELETE FROM oauth_codes WHERE code_hash = ?", (token_hash(code),))
+            else:
                 connection.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(refresh_token),))
             connection.executemany(
                 """INSERT INTO oauth_tokens
-                   (token_hash, token_kind, client_id, scope, resource, expires_at, actor_name)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (token_hash, token_kind, client_id, scope, resource, expires_at, actor_name, connection_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 [
-                    (token_hash(access), "access", client_id, scope, resource, now_ts() + settings.access_token_ttl, actor_name),
-                    (token_hash(refresh), "refresh", client_id, scope, resource, now_ts() + settings.refresh_token_ttl, actor_name),
+                    (token_hash(access), "access", client_id, scope, resource, now_ts() + settings.access_token_ttl, actor_name, grant["id"]),
+                    (token_hash(refresh), "refresh", client_id, row["scope"], resource, now_ts() + settings.refresh_token_ttl, actor_name, grant["id"]),
                 ],
             )
         return JSONResponse(
@@ -368,8 +390,12 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
 
     @router.post("/oauth/revoke", status_code=200)
     def revoke_token(token: str = Form(...)) -> Dict[str, bool]:
-        with db.connect() as connection:
-            connection.execute("DELETE FROM oauth_tokens WHERE token_hash = ?", (token_hash(token),))
+        with db.connect(write=True) as connection:
+            row = connection.execute(
+                "SELECT connection_id FROM oauth_tokens WHERE token_hash = ?", (token_hash(token),)
+            ).fetchone()
+            if row and row["connection_id"]:
+                revoke_connection(connection, row["connection_id"])
         return {"revoked": True}
 
     return router
@@ -378,22 +404,41 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
 def validate_oauth_token(
     db: Database, token: str, resource: str, required_scope: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
-    with db.connect() as connection:
-        row = connection.execute(
-            """SELECT t.*, c.client_name FROM oauth_tokens t
-               JOIN oauth_clients c ON c.client_id = t.client_id
-               WHERE t.token_hash = ? AND t.token_kind = 'access'""",
-            (token_hash(token),),
-        ).fetchone()
+    query = """SELECT t.*, c.client_name, g.actor_name AS current_actor_name,
+                      g.scope AS current_scope, g.last_used_at
+               FROM oauth_tokens t JOIN oauth_clients c ON c.client_id = t.client_id
+               JOIN oauth_connections g ON g.id = t.connection_id
+                 AND g.client_id = t.client_id AND g.resource = t.resource
+               WHERE t.token_hash = ? AND t.token_kind = 'access' AND g.revoked_at IS NULL"""
+    hashed = token_hash(token)
+
+    def principal(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
         if not row or row["expires_at"] <= now_ts() or row["resource"] != resource:
             return None
-        scopes = set(row["scope"].split())
+        scopes = set(row["scope"].split()) & set(row["current_scope"].split())
         if required_scope and required_scope not in scopes:
             return None
         return {
             "client_id": row["client_id"],
             "client_name": row["client_name"],
-            "actor_name": row["actor_name"] or row["client_name"],
+            "actor_name": row["current_actor_name"] or row["client_name"],
             "scopes": scopes,
             "resource": row["resource"],
         }
+
+    with db.connect() as connection:
+        row = connection.execute(query, (hashed,)).fetchone()
+        result = principal(row)
+    if result and row and (row["last_used_at"] is None or row["last_used_at"] < now_ts() - 60):
+        # Only touch activity once per minute per connection. Recheck after
+        # obtaining the lock so an intervening edit/revocation is respected.
+        with db.connect(write=True) as connection:
+            row = connection.execute(query, (hashed,)).fetchone()
+            result = principal(row)
+            if result and row:
+                connection.execute(
+                    """UPDATE oauth_connections SET last_used_at = ? WHERE id = ?
+                       AND (last_used_at IS NULL OR last_used_at < ?)""",
+                    (now_ts(), row["connection_id"], now_ts() - 60),
+                )
+    return result

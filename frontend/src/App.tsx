@@ -20,7 +20,7 @@ import { useAutosave } from "./hooks/useAutosave";
 import { flattenNotes, folderContainsFolder } from "./folderUtils";
 import { applyTheme, persistTheme, readStoredTheme, type Theme } from "./theme";
 import { persistPreviewCheckboxMode, readStoredPreviewCheckboxMode, toggleTaskCheckbox, type PreviewCheckboxMode } from "./previewCheckboxes";
-import type { AppStatus, FolderNode, Note, NoteSummary, TrashedNote, TrashedNoteSummary } from "./types";
+import type { AppStatus, FolderNode, Note, NoteSummary, SettingsSection, TrashedNote, TrashedNoteSummary } from "./types";
 import { WELCOME_DEFAULTS } from "./workspaceDefaults";
 import { clearWorkspaceSession, persistWorkspaceSession, readWorkspaceSession, type ViewMode } from "./workspaceSession";
 import "./styles.css";
@@ -48,6 +48,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [previewCheckboxMode, setPreviewCheckboxMode] = useState<PreviewCheckboxMode>(readStoredPreviewCheckboxMode);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("files");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("preferences");
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [desktopSidebar, setDesktopSidebar] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -477,12 +478,12 @@ export default function App() {
       <NameTooltip />
       <TopBar onMenu={toggleWorkspace} onSearch={() => setSearchOpen(true)} onCreate={() => setNewOpen(true)} onCreateFolder={() => setNewFolderOpen(true)} sidebarOpen={window.matchMedia("(max-width: 900px)").matches ? mobileSidebar : desktopSidebar} />
       <div className="workspace">
-        <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
+        <Sidebar tree={tree} recent={recent} trash={trash} selectedId={trashedNote ? null : note?.id ?? null} selectedTrashId={trashedNote?.id ?? null} selectedFolderId={selectedFolderId} revealKey={revealTree} mode={sidebarMode} settingsSection={settingsSection} mobileOpen={mobileSidebar} desktopOpen={desktopSidebar} onMode={changeSidebarMode} onSettingsSection={setSettingsSection} onSelect={selectSummary} onSelectTrash={(item) => void selectTrashedSummary(item)} onSelectFolder={setSelectedFolderId} onSearch={() => setSearchOpen(true)} onRenameFolder={setFolderToRename} onDeleteFolder={(folder) => void deleteSelectedFolder(folder)} onPurgeTrash={(days) => void purgeTrash(days)} trashBusy={trashBusy} trashMessage={trashMessage} />
         {mobileSidebar ? <button className="sidebar-scrim" aria-label={uiText.app.sidebarClose} onClick={() => setMobileSidebar(false)} /> : null}
         <main className="document-shell">
           {navigationRefreshFailed || trashRefreshFailed || documentRefreshFailed ? <div className="document-error navigation-warning" role="status"><span>{uiText.app.refreshWarning}</span><button onClick={() => void reloadWorkspace()} disabled={documentBusy || reloadBusy}>{uiText.app.retryRefresh}</button></div> : null}
           {documentError ? <div className="document-error" role="alert"><span>{documentError}</span>{saveState === "error" || saveState === "conflict" ? <button onClick={() => void withSavedNote(async () => {}).catch(() => {})} disabled={documentBusy}>{uiText.app.retrySave}</button> : null}</div> : null}
-          {sidebarMode === "settings" ? <SettingsView theme={theme} onTheme={setTheme} previewCheckboxMode={previewCheckboxMode} onPreviewCheckboxMode={setPreviewCheckboxMode} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
+          {sidebarMode === "settings" ? <SettingsView section={settingsSection} theme={theme} onTheme={setTheme} previewCheckboxMode={previewCheckboxMode} onPreviewCheckboxMode={setPreviewCheckboxMode} onClose={() => updateSidebarMode("files")} /> : trashedNote ? <TrashDocument note={trashedNote} compactOutline={compactOutline} outlineDrawerOpen={outlineOpen} outlineVisible={outlineVisible} restoreBusy={restoreBusy} restoreError={restoreError} onToggleOutline={toggleOutline} onCloseOutline={() => setOutlineOpen(false)} onRestore={() => void restoreCurrent()} /> : sidebarMode === "trash" ? <div className="empty-document"><Trash2 size={28} /><h1>{uiText.app.trashEmpty.title}</h1><p>{uiText.app.trashEmpty.description}</p></div> : note ? <>
             <header className="document-bar">
               <div className="breadcrumb-group">
                 <div className="breadcrumb">{note.folder_path.length ? note.folder_path.map((folder) => <span key={folder.id} data-full-name={folder.name} tabIndex={0}>{folder.name}<b>/</b></span>) : <span>{uiText.common.unfiled}<b>/</b></span>}<strong data-full-name={note.filename} tabIndex={0}>{note.filename}</strong></div>

@@ -58,3 +58,25 @@ export type AppStatus = {
 };
 
 export type SaveState = "idle" | "dirty" | "saving" | "saved" | "conflict" | "error";
+
+export type SettingsSection = "preferences" | "connections";
+
+export type OAuthScope = "notes:read" | "notes:search" | "notes:write";
+export type AIConnection = {
+  id: string;
+  client_id: string;
+  client_name: string;
+  actor_name: string;
+  scopes: OAuthScope[];
+  approved_scopes: OAuthScope[];
+  resource: string;
+  redirect_uris: string[];
+  created_at: number | null;
+  updated_at: number;
+  last_used_at: number | null;
+  revoked_at: number | null;
+  expires_at: number | null;
+  legacy: boolean;
+  version: number;
+  status: "active" | "pending" | "expired" | "revoked";
+};

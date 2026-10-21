@@ -448,6 +448,59 @@ kbd { font-family: var(--mono); font-size: 11px; border: 0; color: #708299; back
 .settings-nav-row strong, .settings-nav-row small { display: block; }
 .settings-nav-row strong { font-size: 12px; }
 .settings-nav-row small { margin-top: 3px; color: var(--muted); font-size: 10px; }
+
+.connections-panel { margin-top: 30px; font-size: 12px; }
+.connections-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.connections-heading h2 { display: flex; align-items: center; gap: 9px; margin: 0 0 8px; font-size: 18px; }
+.connections-heading h2 svg { color: var(--blue); flex: 0 0 auto; }
+.connections-heading p { margin: 0; color: var(--muted); line-height: 1.7; }
+.connections-heading > button { flex: 0 0 auto; font-size: 11px; }
+.connection-hint { color: var(--muted); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.connection-count { color: var(--muted); margin: 24px 0 12px; font-size: 11px; }
+.connection-list { display: grid; gap: 18px; }
+.connection-card { min-width: 0; padding: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.connection-card-heading { display: flex; align-items: flex-start; gap: 12px; }
+.connection-icon { display: grid; flex: 0 0 40px; place-items: center; height: 40px; border-radius: 10px; background: var(--blue-pale); color: var(--blue); }
+.connection-identity { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.connection-identity h3 { margin: 0 0 4px; font-size: 15px; line-height: 1.6; }
+.connection-identity p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.connection-status { flex: 0 0 auto; padding: 5px 9px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); font-size: 10px; }
+.connection-status.active { color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, var(--border)); background: color-mix(in srgb, var(--green) 7%, var(--surface)); }
+.connection-status.pending { color: var(--blue); background: var(--blue-pale); }
+.connection-scopes { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0; }
+.connection-scopes > span { padding: 4px 9px; border-radius: 5px; color: var(--blue); background: var(--blue-pale); font-size: 10px; }
+.connection-dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 0 0 16px; }
+.connection-card dt { color: var(--muted); font-size: 10px; }
+.connection-card dd { margin: 5px 0 0; line-height: 1.7; overflow-wrap: anywhere; }
+.connection-details { border-top: 1px solid var(--border); }
+.connection-details summary { display: flex; justify-content: space-between; align-items: center; padding: 13px 0; cursor: pointer; color: var(--muted); font-size: 11px; list-style: none; }
+.connection-details summary::-webkit-details-marker { display: none; }
+.connection-details[open] summary svg { transform: rotate(180deg); }
+.connection-details dl { display: grid; gap: 14px; margin: 0 0 16px; }
+.connection-details code { display: block; font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.connection-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 9px; margin-top: 12px; }
+.connection-actions button { font-size: 11px; min-height: 36px; }
+.connection-actions .connection-disconnect { color: var(--danger); }
+.connection-actions button:disabled, .connections-heading button:disabled { opacity: .5; cursor: not-allowed; }
+.connection-editor { margin-top: 10px; padding-top: 18px; border-top: 1px solid var(--border); }
+.connection-name-label { display: block; font-weight: 600; }
+.connection-editor input:not([type="checkbox"]) { display: block; width: 100%; min-width: 0; height: 42px; margin-top: 8px; padding: 0 11px; border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text); background: var(--surface-strong); }
+.connection-editor fieldset { min-width: 0; margin: 20px 0 0; padding: 0; border: 0; }
+.connection-editor legend { margin-bottom: 10px; font-weight: 600; }
+.connection-scope-options { display: flex; flex-wrap: wrap; gap: 10px; }
+.connection-scope-options label { display: flex; gap: 7px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-strong); cursor: pointer; }
+.connection-scope-options label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.connection-scope-options input { width: 16px; height: 16px; accent-color: var(--blue); }
+.connection-scope-options code { display: block; margin-top: 4px; color: var(--muted); font: 9px var(--mono); }
+.connection-error, .connection-success, .connection-legacy { padding: 12px; border: 1px solid var(--border); border-radius: 8px; line-height: 1.8; overflow-wrap: anywhere; }
+.connection-error { color: var(--danger); background: color-mix(in srgb, var(--danger) 6%, var(--surface)); }
+.connection-success { color: var(--green); background: color-mix(in srgb, var(--green) 6%, var(--surface)); }
+.connection-legacy { color: var(--muted); font-size: 11px; }
+.connection-legacy strong { display: block; margin-bottom: 4px; color: var(--text); }
+.connections-empty { padding: 50px 18px; text-align: center; border: 1px dashed var(--border-strong); border-radius: 14px; color: var(--muted); line-height: 1.8; }
+.connections-empty > svg { color: var(--blue); }
+.connections-empty h3 { color: var(--text); font-size: 15px; }
+.settings-saved-status { min-width: 0; }
 .sidebar-scrim, .outline-scrim { display: none; }
 
 @media (max-width: 1180px) {
@@ -516,6 +569,15 @@ kbd { font-family: var(--mono); font-size: 11px; border: 0; color: #708299; back
   .settings-section { margin-top: 28px; padding: 18px; }
   .settings-section-heading { align-items: center; }
   .settings-section-heading p { max-width: 210px; line-height: 1.55; }
+  .connections-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .connection-card { padding: 16px; }
+  .connection-card-heading { flex-wrap: wrap; gap: 9px; }
+  .connection-status { margin-left: auto; }
+  .connection-icon { flex-basis: 32px; height: 32px; }
+  .connection-dates { grid-template-columns: 1fr; gap: 10px; }
+  .connection-actions { justify-content: flex-start; }
+  .connection-actions button { flex: 1 1 auto; }
+  .settings-statusbar { font-size: 9px; }
   .theme-options, .language-options { grid-template-columns: 1fr; }
 }
 

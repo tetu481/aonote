@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .api import create_api_router
 from .config import Settings
+from .connections import create_connections_router
 from .db import Database
 from .mcp import create_mcp_router
 from .oauth import create_oauth_router
@@ -65,6 +66,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=700)
     app.include_router(create_oauth_router(active_settings, database))
     app.include_router(create_api_router(active_settings, database))
+    app.include_router(create_connections_router(active_settings, database))
     app.include_router(create_mcp_router(active_settings, database))
 
     @app.exception_handler(sqlite3.Error)
@@ -101,6 +103,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 )
             request_id.reset(context)
         response.headers["X-Request-ID"] = trace
+        if request.url.path.startswith("/api/connections"):
+            response.headers["Cache-Control"] = "no-store"
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
