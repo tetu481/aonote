@@ -207,6 +207,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
 
     @router.post("/oauth/authorize", response_class=HTMLResponse)
     def authorize_submit(
+        request: Request,
         client_id: str = Form(...),
         redirect_uri: str = Form(...),
         response_type: str = Form("code"),
@@ -257,7 +258,7 @@ def create_oauth_router(settings: Settings, db: Database) -> APIRouter:
         if not set(normalized_scope.split()).issubset(set(normalized_requested_scope.split())):
             raise HTTPException(status_code=400, detail="invalid_scope")
         values["scope"] = normalized_scope
-        login = check_login(db, settings, password)
+        login = check_login(db, settings, password, request.client.host if request.client else None)
         if login.retry_after:
             minutes = (login.retry_after + 59) // 60
             return HTMLResponse(

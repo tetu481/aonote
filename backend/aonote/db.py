@@ -567,13 +567,6 @@ class Database:
                     expires_at INTEGER NOT NULL
                 );
 
-                CREATE TABLE IF NOT EXISTS login_attempts (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    failed_attempts INTEGER NOT NULL,
-                    window_started_at INTEGER NOT NULL,
-                    locked_until INTEGER NOT NULL
-                );
-
                 CREATE TABLE IF NOT EXISTS oauth_clients (
                     client_id TEXT PRIMARY KEY,
                     client_name TEXT NOT NULL,
@@ -640,6 +633,26 @@ class Database:
 
     @staticmethod
     def _migrate_schema(connection: sqlite3.Connection) -> None:
+        login_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(login_attempts)")
+        }
+        if login_columns and "ip_address" not in login_columns:
+            # Legacy global lockouts contain no source IP and cannot be carried
+            # forward. Reset only this transient counter, within the existing
+            # BEGIN IMMEDIATE transaction. Notes and credentials are untouched.
+            connection.execute("DROP TABLE login_attempts")
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS login_attempts (
+                ip_address TEXT PRIMARY KEY NOT NULL,
+                failed_attempts INTEGER NOT NULL,
+                window_started_at INTEGER NOT NULL,
+                locked_until INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_login_attempts_expiry ON login_attempts(expires_at)"
+        )
         additions = {
             "notes": (
                 "created_actor_name TEXT NOT NULL DEFAULT '管理者'",

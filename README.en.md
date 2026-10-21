@@ -148,9 +148,13 @@ After updating and restarting aonote, refresh the MCP tool list in the client by
 
 ## Security Notes
 
-Set `AONOTE_LOGIN_MAX_ATTEMPTS` to the maximum number of failed password attempts (positive integer, default `5`). Missing, empty, invalid, zero, or negative values also use `5`. Reaching the limit within a 15-minute window blocks new logins for 15 minutes, starting with the attempt that reaches the limit. Responses use HTTP 429 and a `Retry-After` header containing the remaining seconds. Even the correct password is rejected during the lockout; blocked requests do not extend it.
+Set `AONOTE_LOGIN_MAX_ATTEMPTS` to the maximum number of failed password attempts per source IP address (positive integer, default `5`). Missing, empty, invalid, zero, or negative values also use `5`. Reaching the limit from the same IP within a 15-minute window blocks new logins from that IP for 15 minutes, starting with the attempt that reaches the limit. Responses use HTTP 429 and a `Retry-After` header containing the remaining seconds. Even the correct password from that IP is rejected during the lockout; blocked requests do not extend it. Logins from other IPs remain available.
 
-Browser login and OAuth consent share the single administrator account's attempt budget, regardless of IP address or client name. Successful login, window expiry, or lockout expiry resets the counter. SQLite persists the state across restarts and workers. Existing browser sessions, OAuth tokens, and token refresh remain usable. Keep reverse-proxy rate limiting enabled as an additional layer.
+Browser login and OAuth consent share the attempt budget for the same IP. Successful login, window expiry, or lockout expiry resets that IP's counter. SQLite persists the state across restarts and workers; the next login attempt removes expired records. On the first startup after upgrading from account-wide throttling, only the old counter is reset because it has no IP information. Notes and issued credentials are preserved. Existing browser sessions, OAuth tokens, and token refresh remain usable.
+
+The app uses the client address supplied by the ASGI server, not raw `X-Forwarded-For` or `X-Real-IP` headers. Behind a reverse proxy, set Uvicorn's `FORWARDED_ALLOW_IPS` to only the actual proxy IPs or trusted networks, and configure the proxy to set or append the real connecting address in `X-Forwarded-For`. Set this in `.env` for Compose, or in the Uvicorn process environment for direct startup. Without the appropriate setting, all users may be counted under the proxy's IP. Avoid trusting all sources with `*`. See [Uvicorn's documentation](https://www.uvicorn.org/deployment/#proxy-headers) for details.
+
+Devices sharing a public IP (such as the same Wi-Fi network or VPN) also share the limit. Attackers who change source IPs receive a separate budget for each IP, so use a strong administrator password and reverse-proxy rate limiting as well.
 
 - Do not commit `.env`.
 - Do not commit databases containing real notes, including `data/` and `*.sqlite3` files.

@@ -4,6 +4,7 @@ from threading import Barrier
 
 import httpx
 import pytest
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from aonote import login
 from aonote.application import create_app
@@ -33,8 +34,10 @@ def settings(tmp_path):
     )
 
 
-def client_for(app):
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+def client_for(app, peer=("192.0.2.10", 12345)):
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=peer), base_url="http://testserver",
+    )
 
 
 async def password_attempt(client, password="wrong"):
@@ -172,7 +175,7 @@ async def test_lockout_survives_app_restart(settings, clock):
 
 
 @pytest.mark.anyio
-async def test_browser_and_oauth_share_budget_across_clients(settings, clock):
+async def test_browser_and_oauth_share_budget_for_same_ip(settings, clock):
     app = create_app(settings)
     async with client_for(app) as client:
         values = await consent_values(client)
@@ -230,7 +233,7 @@ def test_concurrent_independent_workers_cannot_exceed_budget(settings, clock):
     def attempt(_):
         db = Database(settings.database_path)
         start.wait(timeout=5)
-        return login.check_login(db, settings, "wrong")
+        return login.check_login(db, settings, "wrong", "192.0.2.10")
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(attempt, range(8)))
@@ -242,3 +245,178 @@ def test_concurrent_independent_workers_cannot_exceed_budget(settings, clock):
         assert row["failed_attempts"] == 5
         assert connection.execute("SELECT COUNT(*) FROM login_attempts").fetchone()[0] == 1
         assert "test-password" not in str(dict(row))
+
+
+@pytest.mark.anyio
+async def test_locked_attacker_does_not_block_other_ip_browser_or_oauth(settings, clock):
+    app = create_app(settings)
+    async with client_for(app) as attacker, client_for(app, ("192.0.2.20", 12345)) as owner:
+        for _ in range(5):
+            await password_attempt(attacker)
+        assert (await password_attempt(attacker, "test-password")).status_code == 429
+        # Real logins on a separate IP still issue a session and OAuth code.
+        assert (await password_attempt(owner, "test-password")).status_code == 200
+        assert (await owner.get("/api/tree")).status_code == 200
+        values = await consent_values(owner)
+        authorized = await owner.post("/oauth/authorize", data={**values, "password": "test-password"})
+        assert authorized.status_code == 303
+        assert "code=" in authorized.headers["location"]
+        # The owner's successful login cannot unlock the attacker's IP.
+        assert (await password_attempt(attacker, "test-password")).status_code == 429
+        blocked = await attacker.post("/oauth/authorize", data={**values, "password": "test-password"})
+        assert blocked.status_code == 429
+        assert "location" not in blocked.headers
+
+
+@pytest.mark.anyio
+async def test_success_resets_only_its_own_ip(settings, clock):
+    app = create_app(settings)
+    async with client_for(app) as first, client_for(app, ("192.0.2.20", 12345)) as second:
+        for _ in range(4):
+            assert (await password_attempt(first)).status_code == 401
+            assert (await password_attempt(second)).status_code == 401
+        assert (await password_attempt(second, "test-password")).status_code == 200
+        assert (await password_attempt(first)).status_code == 429
+        assert (await password_attempt(second)).status_code == 401
+    with app.state.db.connect() as connection:
+        counts = dict(connection.execute("SELECT ip_address, failed_attempts FROM login_attempts"))
+    assert counts == {"192.0.2.10": 5, "192.0.2.20": 1}
+
+
+@pytest.mark.anyio
+async def test_different_source_ports_do_not_reset_ip_limit(settings, clock):
+    app = create_app(settings)
+    for index in range(5):
+        async with client_for(app, ("192.0.2.10", 20000 + index)) as client:
+            r = await password_attempt(client)
+            assert r.status_code == (429 if index == 4 else 401)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("first,second", [
+    ("192.0.2.10", "::ffff:192.0.2.10"),
+    ("2001:db8::1", "2001:0db8:0000:0000:0000:0000:0000:0001"),
+    ("fe80::1%eth0", "fe80::1%2"),
+])
+async def test_equivalent_ip_spellings_share_budget(settings, clock, first, second):
+    app = create_app(settings)
+    async with client_for(app, (first, 12345)) as client:
+        for _ in range(4):
+            assert (await password_attempt(client)).status_code == 401
+    async with client_for(app, (second, 12345)) as client:
+        assert (await password_attempt(client)).status_code == 429
+    with app.state.db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM login_attempts").fetchone()[0] == 1
+
+
+@pytest.mark.anyio
+async def test_missing_or_invalid_client_ip_cannot_bypass_limit(settings, clock):
+    app = create_app(settings)
+    for index, peer in enumerate([None, ("", 0), ("unix:", 0), ("unknown-A", 0), ("unknown-B", 0)]):
+        async with client_for(app, peer) as client:
+            r = await password_attempt(client)
+            assert r.status_code == (429 if index == 4 else 401)
+    with app.state.db.connect() as connection:
+        row = connection.execute("SELECT * FROM login_attempts").fetchone()
+        assert row["ip_address"] == "unknown"
+        assert connection.execute("SELECT COUNT(*) FROM login_attempts").fetchone()[0] == 1
+    async with client_for(app) as valid_ip:
+        assert (await password_attempt(valid_ip, "test-password")).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_expired_ip_records_removed_without_shortening_active_lockout(settings, clock):
+    app = create_app(settings)
+    async with client_for(app) as first:
+        assert (await password_attempt(first)).status_code == 401
+    clock[0] += 800
+    async with client_for(app, ("192.0.2.20", 12345)) as locked:
+        for _ in range(5):
+            await password_attempt(locked)
+    clock[0] += 100
+    async with client_for(app, ("192.0.2.30", 12345)) as third:
+        assert (await password_attempt(third)).status_code == 401
+    with app.state.db.connect() as connection:
+        assert {r[0] for r in connection.execute("SELECT ip_address FROM login_attempts")} == {
+            "192.0.2.20", "192.0.2.30",
+        }
+    async with client_for(app, ("192.0.2.20", 12345)) as locked:
+        r = await password_attempt(locked, "test-password")
+        assert r.status_code == 429
+        assert r.headers["retry-after"] == "800"
+    clock[0] += 800
+    async with client_for(app) as first:
+        assert (await password_attempt(first, "test-password")).status_code == 200
+    with app.state.db.connect() as connection:
+        assert [r[0] for r in connection.execute("SELECT ip_address FROM login_attempts")] == ["192.0.2.30"]
+
+
+@pytest.mark.anyio
+async def test_untrusted_proxy_headers_cannot_change_source_ip(settings, clock):
+    app = create_app(settings)
+    wrapped = ProxyHeadersMiddleware(app, trusted_hosts=["10.0.0.10"])
+    async with client_for(wrapped, ("198.51.100.10", 12345)) as attacker:
+        for index in range(5):
+            r = await attacker.post("/api/session", json={"password": "wrong"}, headers={
+                "X-Forwarded-For": f"192.0.2.{index + 1}",
+                "X-Real-IP": f"192.0.2.{index + 10}",
+                "Forwarded": f"for=192.0.2.{index + 20}",
+            })
+            assert r.status_code == (429 if index == 4 else 401)
+    with app.state.db.connect() as connection:
+        assert [r[0] for r in connection.execute("SELECT ip_address FROM login_attempts")] == ["198.51.100.10"]
+
+
+@pytest.mark.anyio
+async def test_trusted_proxy_separates_ips_and_rejects_spoofed_prefix(settings, clock):
+    app = create_app(settings)
+    wrapped = ProxyHeadersMiddleware(app, trusted_hosts=["10.0.0.10", "10.0.0.11"])
+    async with client_for(wrapped, ("10.0.0.10", 12345)) as proxy:
+        for _ in range(4):
+            r = await proxy.post("/api/session", json={"password": "wrong"}, headers={
+                "X-Forwarded-For": "192.0.2.10, 10.0.0.11",
+            })
+            assert r.status_code == 401
+        # A trusted proxy appends the real peer. The fake leftmost IP must not win.
+        r = await proxy.post("/api/session", json={"password": "wrong"}, headers={
+            "X-Forwarded-For": "198.51.100.99, 192.0.2.10, 10.0.0.11",
+        })
+        assert r.status_code == 429
+        values = await consent_values(proxy)
+        owner_headers = {"X-Forwarded-For": "192.0.2.20, 10.0.0.11"}
+        assert (await proxy.post("/api/session", json={"password": "test-password"}, headers=owner_headers)).status_code == 200
+        granted = await proxy.post("/oauth/authorize", data={**values, "password": "test-password"}, headers=owner_headers)
+        assert granted.status_code == 303
+        blocked = await proxy.post("/oauth/authorize", data={**values, "password": "test-password"}, headers={"X-Forwarded-For": "192.0.2.10"})
+        assert blocked.status_code == 429
+    with app.state.db.connect() as connection:
+        assert [r[0] for r in connection.execute("SELECT ip_address FROM login_attempts")] == ["192.0.2.10"]
+
+
+@pytest.mark.anyio
+async def test_legacy_global_lock_migration_preserves_notes_and_credentials(settings, clock):
+    app = create_app(settings)
+    db = app.state.db
+    note = db.create_note("private-migration-test.md", "# Keep my content")
+    session = db.create_session(3600)
+    before = db.list_tree()
+    with db.connect(write=True) as connection:
+        connection.execute("DROP TABLE login_attempts")
+        connection.execute("""CREATE TABLE login_attempts (
+            id INTEGER PRIMARY KEY CHECK (id = 1), failed_attempts INTEGER NOT NULL,
+            window_started_at INTEGER NOT NULL, locked_until INTEGER NOT NULL
+        )""")
+        connection.execute("INSERT INTO login_attempts VALUES (1, 5, ?, ?)", (clock[0], clock[0] + 900))
+    migrated = create_app(settings)
+    assert migrated.state.db.list_tree() == before
+    assert migrated.state.db.get_note(note["id"])["content"] == "# Keep my content"
+    assert migrated.state.db.valid_session(session)
+    async with client_for(migrated) as client:
+        assert (await password_attempt(client, "test-password")).status_code == 200
+        for _ in range(5):
+            await password_attempt(client)
+    # Re-running initialization must preserve new per-IP lockouts.
+    async with client_for(create_app(settings)) as restarted:
+        assert (await password_attempt(restarted, "test-password")).status_code == 429
+    with migrated.state.db.connect() as connection:
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

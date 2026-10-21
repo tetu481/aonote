@@ -87,8 +87,10 @@ def create_api_router(settings: Settings, db: Database) -> APIRouter:
         }
 
     @router.post("/session")
-    def login(payload: LoginInput, response: Response) -> Dict[str, bool]:
-        result = check_login(db, settings, payload.password)
+    def login(payload: LoginInput, request: Request, response: Response) -> Dict[str, bool]:
+        result = check_login(
+            db, settings, payload.password, request.client.host if request.client else None,
+        )
         if result.retry_after:
             raise HTTPException(
                 status_code=429,
