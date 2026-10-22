@@ -51,6 +51,7 @@ async function readNote(request: APIRequestContext, note: TestNote): Promise<Tes
 
 async function selectMode(page: Page, mode: string) {
   await page.getByRole("button", { name: "設定", exact: true }).click();
+  await page.getByRole("button", { name: "動作設定", exact: true }).click();
   const group = page.getByRole("radiogroup", { name: "プレビューのチェックボックス", exact: true });
   await expect(group.getByRole("radio")).toHaveCount(3);
   await group.locator(`input[value="${mode}"]`).check();
@@ -70,6 +71,7 @@ test("既定は編集不可で、設定で有効化するとノート切替前�
   const [a, b] = await setup(page, request);
   await expect(page.getByRole("checkbox", { name: "タスク: First task", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "設定", exact: true }).click();
+  await page.getByRole("button", { name: "動作設定", exact: true }).click();
   await expect(page.locator('.preview-checkbox-options input[value="readonly"]')).toBeChecked();
   await page.getByRole("button", { name: "ノートに戻る", exact: true }).click();
   await selectMode(page, "toggle");
@@ -213,11 +215,14 @@ test("編集を有効にしていてもゴミ箱のチェックボックスは�
 test("日本語・英語とライト・ダークで設定を表示しモバイルでも切り替えられる", async ({ page, request }) => {
   await setup(page, request);
   await page.getByRole("button", { name: "設定", exact: true }).click();
+  await page.getByRole("button", { name: "動作設定", exact: true }).click();
   await page.locator('.preview-checkbox-options input[value="toggle-strikethrough"]').check();
   await page.getByRole("heading", { name: "プレビューのチェックボックス", exact: true }).scrollIntoViewIfNeeded();
   await screenshot(page, "settings-ja-light-desktop");
+  await page.getByRole("button", { name: "表示設定", exact: true }).click();
   await page.getByRole("radio", { name: /English/ }).click();
   await page.getByRole("radio", { name: /Dark/ }).click();
+  await page.getByRole("button", { name: "Behavior settings", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   const group = page.getByRole("radiogroup", { name: "Preview checkboxes", exact: true });
   await expect(group.getByRole("radio")).toHaveCount(3);

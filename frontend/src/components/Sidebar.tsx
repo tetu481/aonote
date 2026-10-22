@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Palette, Pencil, Search, Settings2, ShieldCheck, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock3, FileText, Folder, FolderOpen, Palette, Pencil, Search, Settings2, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { folderContainsNote, flattenNotes } from "../folderUtils";
 import { useLocale, useUiText } from "../LocaleContext";
@@ -122,6 +122,7 @@ export function Sidebar({ tree, recent, trash, selectedId, selectedTrashId, sele
             </button>
           )) : mode === "trash" ? <div className="trash-empty"><Trash2 size={22} /><span>{uiText.sidebar.emptyTrash}</span></div> : <>
             <button className={`settings-nav-row ${settingsSection === "preferences" ? "selected" : ""}`} aria-label={uiText.sidebar.appearance} aria-current={settingsSection === "preferences" ? "page" : undefined} onClick={() => { onSettingsSection("preferences"); onMode("settings"); }}><Palette size={17} /><span><strong>{uiText.sidebar.appearance}</strong><small>{uiText.sidebar.appearanceDescription}</small></span></button>
+            <button className={`settings-nav-row ${settingsSection === "behavior" ? "selected" : ""}`} aria-label={uiText.sidebar.behavior} aria-current={settingsSection === "behavior" ? "page" : undefined} onClick={() => { onSettingsSection("behavior"); onMode("settings"); }}><SlidersHorizontal size={17} /><span><strong>{uiText.sidebar.behavior}</strong><small>{uiText.sidebar.behaviorDescription}</small></span></button>
             <button className={`settings-nav-row ${settingsSection === "connections" ? "selected" : ""}`} aria-label={uiText.sidebar.connections} aria-current={settingsSection === "connections" ? "page" : undefined} onClick={() => { onSettingsSection("connections"); onMode("settings"); }}><ShieldCheck size={17} /><span><strong>{uiText.sidebar.connections}</strong><small>{uiText.sidebar.connectionsDescription}</small></span></button>
           </>}
         </div>

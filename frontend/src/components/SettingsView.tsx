@@ -17,6 +17,11 @@ type Props = {
 
 export function SettingsView({ section, theme, onTheme, previewCheckboxMode, onPreviewCheckboxMode, onClose }: Props) {
   const { locale, setLocale, text: uiText } = useLocale();
+  const sectionLabels = {
+    preferences: uiText.sidebar.appearance,
+    behavior: uiText.sidebar.behavior,
+    connections: uiText.sidebar.connections,
+  };
   const themes = [
     { id: "light", ...uiText.settings.themes.light, Icon: Sun },
     { id: "dark", ...uiText.settings.themes.dark, Icon: MoonStar },
@@ -24,17 +29,16 @@ export function SettingsView({ section, theme, onTheme, previewCheckboxMode, onP
 
   return <>
     <header className="document-bar settings-document-bar">
-      <div className="settings-breadcrumb"><Settings2 size={17} /><strong>{uiText.settings.breadcrumb}</strong><span>/</span><span>{section === "connections" ? uiText.sidebar.connections : uiText.sidebar.appearance}</span></div>
+      <div className="settings-breadcrumb"><Settings2 size={17} /><strong>{uiText.settings.breadcrumb}</strong><span>/</span><span>{sectionLabels[section]}</span></div>
       <button className="secondary-button settings-back-button" onClick={onClose} aria-label={uiText.settings.backToNote}><ArrowLeft size={16} /><span>{uiText.settings.backToNote}</span></button>
     </header>
     <div className="settings-scroll">
       <section className="settings-page" aria-labelledby="settings-title">
         <div className="settings-intro">
-          <span>{uiText.settings.eyebrow}</span>
-          <h1 id="settings-title">{uiText.settings.title}</h1>
-          <p>{uiText.settings.description}</p>
+          <h1 id="settings-title">{sectionLabels[section]}</h1>
+          <p>{uiText.settings.sectionDescriptions[section]}</p>
         </div>
-        {section === "connections" ? <ConnectionsView /> : <>
+        {section === "preferences" ? <>
         <section className="settings-section" aria-labelledby="theme-heading">
           <div className="settings-section-heading">
             <div><h2 id="theme-heading">{uiText.settings.themeTitle}</h2><p>{uiText.settings.themeDescription}</p></div>
@@ -68,6 +72,8 @@ export function SettingsView({ section, theme, onTheme, previewCheckboxMode, onP
             })}
           </div>
         </section>
+        </> : null}
+        {section === "behavior" ?
         <section className="settings-section" aria-labelledby="preview-checkbox-heading">
           <div className="settings-section-heading">
             <div><h2 id="preview-checkbox-heading">{uiText.settings.previewCheckboxTitle}</h2><p>{uiText.settings.previewCheckboxDescription}</p></div>
@@ -83,7 +89,8 @@ export function SettingsView({ section, theme, onTheme, previewCheckboxMode, onP
             })}
           </div>
         </section>
-        </>}
+        : null}
+        {section === "connections" ? <ConnectionsView /> : null}
       </section>
     </div>
     <footer className="statusbar settings-statusbar"><span className="settings-saved-status"><i />{section === "connections" ? uiText.settings.connectionStorage : uiText.settings.savedAutomatically}</span><span className="status-spacer" /><span>{uiText.settings.currentTheme(uiText.settings.themes[theme].label)}</span><b /><span>{uiText.settings.currentLanguage(uiText.settings.languages[locale].label)}</span></footer>

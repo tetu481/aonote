@@ -59,7 +59,7 @@ export type AppStatus = {
 
 export type SaveState = "idle" | "dirty" | "saving" | "saved" | "conflict" | "error";
 
-export type SettingsSection = "preferences" | "connections";
+export type SettingsSection = "preferences" | "behavior" | "connections";
 
 export type OAuthScope = "notes:read" | "notes:search" | "notes:write";
 export type AIConnection = {

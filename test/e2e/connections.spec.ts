@@ -48,11 +48,12 @@ async function openConnections(page: Page, english = false) {
   const settingsMenu = page.locator(".sidebar-panel");
   const displaySettings = settingsMenu.getByRole("button", { name: english ? "Display settings" : "表示設定", exact: true });
   const connections = settingsMenu.getByRole("button", { name: english ? "Manage AI connections" : "接続AI管理", exact: true });
-  await expect(settingsMenu.locator(".settings-nav-row")).toHaveCount(2);
+  await expect(settingsMenu.locator(".settings-nav-row")).toHaveCount(3);
   await expect(displaySettings).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".settings-sections")).toHaveCount(0);
   await connections.click();
   await expect(connections).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: english ? "Manage AI connections" : "接続AI管理", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: english ? "Connected AI" : "接続済みAI", exact: true })).toBeVisible();
   await expect(page.locator(".connections-panel")).toHaveAttribute("aria-busy", "false");
 }

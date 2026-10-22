@@ -104,7 +104,7 @@ ChatGPT connections require publicly accessible HTTPS. For local development, us
 
 ## Manage Connected AI Apps
 
-Open **Settings → Manage AI connections** in the left menu to manage connections approved through OAuth. Theme, language and preview controls are under **Display settings**. Registering a client alone does not add an entry.
+Open **Settings → Manage AI connections** in the left menu to manage connections approved through OAuth. Theme and language are under **Display settings**; preview checkbox controls are under **Behavior settings**. Registering a client alone does not add an entry.
 
 - Review the display name, app, allowed scopes, connection time, last use and status (active, pending, expired or disconnected). Expand **Connection details** for the client ID, connection ID, resource, registered callback URLs and credential expiry. Authenticated MCP/REST activity is recorded approximately once per minute. Token values and hashes are never returned by the management API.
 - Use **Edit details and permissions**, then **Save changes** to store a display name and permissions on the server. Name changes apply to future writes, not authors/editors already recorded on notes. The registered app name (`client_name`) and resource are read-only.
